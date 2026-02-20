@@ -17,9 +17,15 @@ table { width:100%; border-collapse:collapse; }
 th,td { padding:6px; text-align:center; border-bottom:1px solid #eee; }
 .muted { color:#666; font-size:12px; }
 .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:8px; }
+.badge-ok { background:#e9f7ee; color:#0b6b0b; }
+.badge-nr { background:#fdecec; color:#b00020; }
 #status { margin: 10px 0 15px 0; }
 .status-ok { color:#0b6b0b; }
 .status-err { color:#b00020; white-space: pre-wrap; }
+.smallnote { font-size:12px; color:#666; margin-top:6px; }
+hr { border:none; border-top:1px solid #eee; margin:12px 0; }
 </style>
 </head>
 <body>
@@ -29,6 +35,7 @@ th,td { padding:6px; text-align:center; border-bottom:1px solid #eee; }
 
 <div class="card">
   <h2>Leaderboard</h2>
+  <div class="smallnote">Ordered by <b>Seasons Won</b>. Other columns are stats from <b>completed</b> matches only.</div>
   <table id="leaderboard"></table>
 </div>
 
@@ -40,23 +47,35 @@ th,td { padding:6px; text-align:center; border-bottom:1px solid #eee; }
 
 <div class="card">
   <h2>Add Match</h2>
+  <div class="smallnote">Enter each game score as <b>Alex – George</b>. A match is “Completed” only when someone wins <b>3 valid games</b> (to 15, win by 2).</div>
   <div id="inputs"></div>
   <button id="addMatchBtn">Add Match</button>
 </div>
 
 <div class="card">
   <h2>Match History</h2>
-  <div class="muted">Tip: Deleting a match will automatically recalculate season scores and winners.</div>
+  <div class="muted">Tip: Deleting a match automatically recalculates season scores and winners.</div>
   <div id="history"></div>
 </div>
 
 <div class="card">
-  <h2>Charts</h2>
-  <canvas id="seasonChart"></canvas>
-  <br><br>
-  <canvas id="matchChart"></canvas>
-  <br><br>
+  <h2>Charts (percentages)</h2>
+
+  <div class="smallnote"><b>Win % by day of week</b> (completed matches only). Bars are 0–100%.</div>
   <canvas id="weekdayWinRateChart"></canvas>
+
+  <hr>
+
+  <div class="grid2">
+    <div>
+      <div class="smallnote"><b>Comeback Match Win %</b>: of a player’s match wins, what % were wins where they trailed by 1+ games at some point? (completed matches only)</div>
+      <canvas id="comebackMatchChart"></canvas>
+    </div>
+    <div>
+      <div class="smallnote"><b>Comeback Season Win %</b>: of seasons won, what % were seasons where they trailed by 1+ matches at some point?</div>
+      <canvas id="comebackSeasonChart"></canvas>
+    </div>
+  </div>
 </div>
 
 <script type="module">
@@ -77,9 +96,10 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 let data;
-let seasonChartInstance = null;
-let matchChartInstance = null;
+
 let weekdayWinRateChartInstance = null;
+let comebackMatchChartInstance = null;
+let comebackSeasonChartInstance = null;
 
 function setStatusOk(msg){
   const el = document.getElementById("status");
@@ -167,6 +187,68 @@ function flattenMatchesInStoredOrder(){
   return all;
 }
 
+/* ---------- RULE LOGIC ---------- */
+
+/**
+ * A valid squash game score must:
+ * - have someone reach 15+ AND
+ * - be won by at least 2 points
+ */
+function getValidGameWinner(a, g){
+  if(typeof a !== "number" || typeof g !== "number") return null;
+  const max = Math.max(a, g);
+  const diff = Math.abs(a - g);
+
+  if(max < 15) return null;
+  if(diff < 2) return null;
+
+  return (a > g) ? 0 : 1; // 0 = Alex, 1 = George
+}
+
+/**
+ * From entered game scores, compute:
+ * - gameWins: [alexGamesWon, georgeGamesWon]
+ * - trailedByOneOrMoreAtAnyPoint for each player (during this match)
+ * - completed + winner when someone reaches 3 valid game wins
+ */
+function computeMatchOutcome(games){
+  let gameWins = [0,0];
+
+  // Track whether eventual winner had trailed by 1+ games at any point
+  // We'll track for both players so we can compute comeback wins for either.
+  let alexTrailed = false;
+  let georgeTrailed = false;
+
+  for(const game of games){
+    const w = getValidGameWinner(game.a, game.g);
+    if(w === null) continue;
+
+    gameWins[w]++;
+
+    // After updating score, check if someone is trailing by 1+
+    if(gameWins[0] < gameWins[1]) alexTrailed = true;
+    if(gameWins[1] < gameWins[0]) georgeTrailed = true;
+
+    // Stop evaluating once match is decided (first to 3)
+    if(gameWins[0] >= 3 || gameWins[1] >= 3) break;
+  }
+
+  const completed = (gameWins[0] >= 3 || gameWins[1] >= 3);
+  const winner = completed ? (gameWins[0] > gameWins[1] ? 0 : 1) : null;
+
+  // comebackWin indicates: winner was trailing by 1+ games at some point
+  let comebackWin = false;
+  if(completed && winner === 0) comebackWin = alexTrailed;
+  if(completed && winner === 1) comebackWin = georgeTrailed;
+
+  return { completed, winner, gameWins, comebackWin };
+}
+
+/* ---------- SEASON REBUILD ---------- */
+/**
+ * Rebuild seasons from scratch based on match order currently stored.
+ * Only COMPLETED matches count toward season wins.
+ */
 function rebuildSeasonsFromMatches(allMatches){
   const seasons = [];
   let current = { matches: [], wins: [0,0], winner: null };
@@ -174,7 +256,7 @@ function rebuildSeasonsFromMatches(allMatches){
   for(const match of allMatches){
     current.matches.push(match);
 
-    if(match && (match.winner === 0 || match.winner === 1)){
+    if(match && match.completed && (match.winner === 0 || match.winner === 1)){
       current.wins[match.winner]++;
 
       if(current.wins[match.winner] >= 5 && current.winner === null){
@@ -185,7 +267,7 @@ function rebuildSeasonsFromMatches(allMatches){
     }
   }
 
-  seasons.push(current);
+  seasons.push(current); // keep open season
   data.seasons = seasons;
 }
 
@@ -193,6 +275,7 @@ function getCurrentSeason(){
   return data.seasons[data.seasons.length-1];
 }
 
+/* ---------- STATS ---------- */
 function calculateStats(){
   let stats=[
     {name:"Alex",seasons:0,matches:0,gamesWon:0,gamesLost:0,pointsDiff:0},
@@ -203,12 +286,18 @@ function calculateStats(){
     if(s.winner!==null) stats[s.winner].seasons++;
 
     (s.matches || []).forEach(m=>{
-      if(m && (m.winner === 0 || m.winner === 1)) stats[m.winner].matches++;
+      // Only completed matches count in core stats
+      if(!m || !m.completed) return;
 
+      if(m.winner === 0 || m.winner === 1) stats[m.winner].matches++;
+
+      // Count only VALID games (so unfinished weird scores don’t pollute)
       (m.games || []).forEach(g=>{
+        const w = getValidGameWinner(g.a, g.g);
+        if(w === null) return;
+
         const a = g.a;
         const b = g.g;
-        if(typeof a !== "number" || typeof b !== "number") return;
 
         stats[0].gamesWon += a>b ? 1 : 0;
         stats[1].gamesWon += b>a ? 1 : 0;
@@ -224,14 +313,16 @@ function calculateStats(){
   return stats.sort((a,b)=>b.seasons-a.seasons);
 }
 
-function computeWeekdayWinRates(){
+/* ---------- ANALYTICS ---------- */
+function computeWeekdayWinRatesPercent(){
   const labels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const totals = labels.map(() => [0,0]);
   const wins = labels.map(() => [0,0]);
 
   data.seasons.forEach(season => {
     (season.matches || []).forEach(match => {
-      if(!match || (match.winner !== 0 && match.winner !== 1)) return;
+      if(!match || !match.completed) return;
+      if(match.winner !== 0 && match.winner !== 1) return;
       if(!match.date) return;
 
       const wd = getWeekdayShortFromISODate(match.date);
@@ -244,10 +335,88 @@ function computeWeekdayWinRates(){
     });
   });
 
-  const alexRates = labels.map((_, i) => totals[i][0] ? wins[i][0] / totals[i][0] : 0);
-  const georgeRates = labels.map((_, i) => totals[i][1] ? wins[i][1] / totals[i][1] : 0);
+  const alexPct = labels.map((_, i) => totals[i][0] ? (wins[i][0] / totals[i][0]) * 100 : 0);
+  const georgePct = labels.map((_, i) => totals[i][1] ? (wins[i][1] / totals[i][1]) * 100 : 0);
 
-  return { labels, alexRates, georgeRates };
+  return { labels, alexPct, georgePct };
+}
+
+/**
+ * Comeback Match Win %:
+ * of a player's match wins, what % were comeback wins (trailed by 1+ games at some point)?
+ */
+function computeComebackMatchWinPercent(){
+  const wins = [0,0];
+  const comebackWins = [0,0];
+
+  data.seasons.forEach(season => {
+    (season.matches || []).forEach(m => {
+      if(!m || !m.completed) return;
+      if(m.winner !== 0 && m.winner !== 1) return;
+
+      wins[m.winner]++;
+
+      if(m.comebackWin === true) comebackWins[m.winner]++;
+    });
+  });
+
+  const pct = [
+    wins[0] ? (comebackWins[0] / wins[0]) * 100 : 0,
+    wins[1] ? (comebackWins[1] / wins[1]) * 100 : 0
+  ];
+
+  return { wins, comebackWins, pct };
+}
+
+/**
+ * Comeback Season Win %:
+ * of seasons won, what % did the eventual winner trail by 1+ matches at some point in that season?
+ *
+ * We compute this by replaying completed matches in each season and checking if the eventual
+ * season winner was ever behind in match-win count.
+ */
+function computeComebackSeasonWinPercent(){
+  let seasonsWon = [0,0];
+  let comebackSeasons = [0,0];
+
+  data.seasons.forEach(season => {
+    if(season.winner !== 0 && season.winner !== 1) return;
+
+    const w = season.winner;
+    seasonsWon[w]++;
+
+    let score = [0,0];
+    let winnerTrailed = false;
+
+    (season.matches || []).forEach(m => {
+      if(!m || !m.completed) return;
+      if(m.winner !== 0 && m.winner !== 1) return;
+
+      score[m.winner]++;
+
+      // winner trails if their score < opponent score
+      if(score[w] < score[1-w]) winnerTrailed = true;
+    });
+
+    if(winnerTrailed) comebackSeasons[w]++;
+  });
+
+  const pct = [
+    seasonsWon[0] ? (comebackSeasons[0] / seasonsWon[0]) * 100 : 0,
+    seasonsWon[1] ? (comebackSeasons[1] / seasonsWon[1]) * 100 : 0
+  ];
+
+  return { seasonsWon, comebackSeasons, pct };
+}
+
+/* ---------- RENDER ---------- */
+function escapeHtml(str){
+  return String(str)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
 
 function renderAll(){
@@ -281,15 +450,6 @@ function renderSeasonScore(){
     "Season " + data.seasons.length + " (current)";
 }
 
-function escapeHtml(str){
-  return String(str)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
 function renderHistory(){
   let html="";
 
@@ -306,17 +466,28 @@ function renderHistory(){
       const report = m.report || "";
       const gamesStr = (m.games || []).map(g => `${g.a}-${g.g}`).join(", ");
 
+      const badge = m.completed
+        ? `<span class="badge badge-ok">Completed</span>`
+        : `<span class="badge badge-nr">No Result</span>`;
+
+      const winnerText = (m.completed && (m.winner === 0 || m.winner === 1))
+        ? data.players[m.winner]
+        : "N/A";
+
+      // show game wins if available
+      const gw = m.gameWins || [0,0];
+
       html += `<div style="margin-top:8px; padding:8px; border:1px solid #eee; border-radius:10px;">
         <div class="row">
           <div>
-            <b>Match ${mi+1}</b>
-            <span class="muted">• Winner: ${data.players[m.winner] ?? "N/A"} • ${when}</span>
+            <b>Match ${mi+1}</b> ${badge}
+            <div class="muted">Winner: ${winnerText} • ${when} • Games won: Alex ${gw[0]} - ${gw[1]} George</div>
           </div>
           <div style="margin-left:auto;">
             <button class="small danger" onclick="deleteMatch(${si}, ${mi})">Delete</button>
           </div>
         </div>
-        <div>Games: ${gamesStr || "<span class='muted'>No game scores</span>"}</div>
+        <div>Scores (Alex–George): ${gamesStr || "<span class='muted'>No game scores</span>"}</div>
         ${report ? `<div class="muted">Report: ${escapeHtml(report)}</div>` : ""}
       </div>`;
     });
@@ -326,76 +497,108 @@ function renderHistory(){
 }
 
 function renderCharts(){
-  const stats = calculateStats();
-
-  if(seasonChartInstance) seasonChartInstance.destroy();
-  if(matchChartInstance) matchChartInstance.destroy();
+  // destroy previous
   if(weekdayWinRateChartInstance) weekdayWinRateChartInstance.destroy();
+  if(comebackMatchChartInstance) comebackMatchChartInstance.destroy();
+  if(comebackSeasonChartInstance) comebackSeasonChartInstance.destroy();
 
-  seasonChartInstance = new Chart(document.getElementById("seasonChart"),{
-    type:'bar',
-    data:{
-      labels:stats.map(p=>p.name),
-      datasets:[{label:"Seasons Won",data:stats.map(p=>p.seasons)}]
-    }
-  });
-
-  matchChartInstance = new Chart(document.getElementById("matchChart"),{
-    type:'bar',
-    data:{
-      labels:stats.map(p=>p.name),
-      datasets:[{label:"Matches Won",data:stats.map(p=>p.matches)}]
-    }
-  });
-
-  const wr = computeWeekdayWinRates();
+  // Weekday win rate %
+  const wr = computeWeekdayWinRatesPercent();
   weekdayWinRateChartInstance = new Chart(document.getElementById("weekdayWinRateChart"),{
     type:'bar',
     data:{
       labels: wr.labels,
       datasets:[
-        { label:"Alex win rate", data: wr.alexRates },
-        { label:"George win rate", data: wr.georgeRates }
+        { label:"Alex win %", data: wr.alexPct },
+        { label:"George win %", data: wr.georgePct }
       ]
     },
-    options: { scales: { y: { min: 0, max: 1 } } }
+    options: { scales: { y: { min: 0, max: 100 } } }
+  });
+
+  // Comeback match win %
+  const cm = computeComebackMatchWinPercent();
+  comebackMatchChartInstance = new Chart(document.getElementById("comebackMatchChart"),{
+    type:'bar',
+    data:{
+      labels: ["Alex","George"],
+      datasets:[{ label:"Comeback match wins (% of match wins)", data: cm.pct }]
+    },
+    options: { scales: { y: { min: 0, max: 100 } } }
+  });
+
+  // Comeback season win %
+  const cs = computeComebackSeasonWinPercent();
+  comebackSeasonChartInstance = new Chart(document.getElementById("comebackSeasonChart"),{
+    type:'bar',
+    data:{
+      labels: ["Alex","George"],
+      datasets:[{ label:"Comeback seasons (% of seasons won)", data: cs.pct }]
+    },
+    options: { scales: { y: { min: 0, max: 100 } } }
   });
 }
 
+/* ---------- INPUTS ---------- */
 function createInputs(){
   let html="";
+  html += `<div class="row muted" style="font-weight:600;">
+    <div style="width:120px;"> </div>
+    <div style="width:70px; text-align:center;">Alex</div>
+    <div style="width:20px;"></div>
+    <div style="width:70px; text-align:center;">George</div>
+  </div>`;
+
   for(let i=0;i<5;i++){
-    html+=`Game ${i+1}: <input id="a${i}" type="number"> - <input id="b${i}" type="number"><br>`;
+    html += `<div class="row" style="align-items:center;">
+      <div style="width:120px;">Game ${i+1}</div>
+      <input id="a${i}" type="number" inputmode="numeric" />
+      <div style="width:20px; text-align:center;">–</div>
+      <input id="b${i}" type="number" inputmode="numeric" />
+    </div>`;
   }
-  html+=`Date: <input type="date" id="matchDate"> Time: <input type="time" id="matchTime"><br>`;
-  html+=`Match Report (optional):<br><textarea id="matchReport"></textarea><br>`;
+
+  html += `<div style="margin-top:8px;">
+    Date: <input type="date" id="matchDate"> 
+    Time: <input type="time" id="matchTime">
+  </div>`;
+
+  html += `Match Report (optional):<br><textarea id="matchReport"></textarea><br>`;
+
   document.getElementById("inputs").innerHTML=html;
   setDateTimeToNow();
 }
 
+/* ---------- ACTIONS ---------- */
 window.addMatch = async function(){
   try {
     let games=[];
-    let wins=[0,0];
-
     for(let i=0;i<5;i++){
       const a = parseInt(document.getElementById("a"+i).value);
       const b = parseInt(document.getElementById("b"+i).value);
       if(!isNaN(a) && !isNaN(b)){
         games.push({ a: a, g: b });
-        if(a>b) wins[0]++;
-        if(b>a) wins[1]++;
       }
     }
 
-    if(wins[0]===0 && wins[1]===0) return alert("Enter at least one game score.");
+    if(games.length === 0) return alert("Enter at least one game score.");
 
-    const winner = wins[0] > wins[1] ? 0 : 1;
     const date = document.getElementById("matchDate").value;
     const time = document.getElementById("matchTime").value;
     const report = document.getElementById("matchReport").value;
 
-    const match = { games, winner, date, time, report };
+    const outcome = computeMatchOutcome(games);
+
+    const match = {
+      games,
+      date,
+      time,
+      report,
+      completed: outcome.completed,
+      winner: outcome.winner,
+      gameWins: outcome.gameWins,
+      comebackWin: outcome.comebackWin
+    };
 
     const all = flattenMatchesInStoredOrder();
     all.push(match);
