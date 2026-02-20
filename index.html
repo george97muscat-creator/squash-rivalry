@@ -17,11 +17,15 @@ table { width:100%; border-collapse:collapse; }
 th,td { padding:6px; text-align:center; border-bottom:1px solid #eee; }
 .muted { color:#666; font-size:12px; }
 .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+#status { margin: 10px 0 15px 0; }
+.status-ok { color:#0b6b0b; }
+.status-err { color:#b00020; white-space: pre-wrap; }
 </style>
 </head>
 <body>
 
 <h1>🏆 Alex vs George</h1>
+<div id="status" class="muted">Loading…</div>
 
 <div class="card">
   <h2>Leaderboard</h2>
@@ -48,11 +52,11 @@ th,td { padding:6px; text-align:center; border-bottom:1px solid #eee; }
 
 <div class="card">
   <h2>Charts</h2>
-<canvas id="seasonChart"></canvas>
-<br><br>
-<canvas id="matchChart"></canvas>
-<br><br>
-<canvas id="weekdayWinRateChart"></canvas>
+  <canvas id="seasonChart"></canvas>
+  <br><br>
+  <canvas id="matchChart"></canvas>
+  <br><br>
+  <canvas id="weekdayWinRateChart"></canvas>
 </div>
 
 <script type="module">
@@ -77,11 +81,22 @@ let seasonChartInstance = null;
 let matchChartInstance = null;
 let weekdayWinRateChartInstance = null;
 
+function setStatusOk(msg){
+  const el = document.getElementById("status");
+  el.className = "muted status-ok";
+  el.textContent = msg;
+}
+function setStatusErr(msg){
+  const el = document.getElementById("status");
+  el.className = "muted status-err";
+  el.textContent = msg;
+}
+
 function pad2(n){ return String(n).padStart(2, "0"); }
+
 function getWeekdayShortFromISODate(isoDate){
-  // isoDate: "YYYY-MM-DD"
   if(!isoDate) return "";
-  const d = new Date(isoDate + "T00:00:00"); // local time
+  const d = new Date(isoDate + "T00:00:00");
   if(isNaN(d.getTime())) return "";
   return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()];
 }
@@ -93,6 +108,7 @@ function formatDateTimeNice(date, time){
   if(date) return `${wd} ${date}`;
   return time;
 }
+
 function setDateTimeToNow(){
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -119,17 +135,24 @@ function resetMatchEntryForm(){
 }
 
 async function loadData(){
-  const snap = await getDoc(doc(db,"squash","main"));
-  if(snap.exists()){
-    data = snap.data();
-  } else {
-    data = {
-      players:["Alex","George"],
-      seasons:[{matches:[],wins:[0,0],winner:null}]
-    };
-    await saveData();
+  try {
+    setStatusOk("Loading…");
+    const snap = await getDoc(doc(db,"squash","main"));
+    if(snap.exists()){
+      data = snap.data();
+    } else {
+      data = {
+        players:["Alex","George"],
+        seasons:[{matches:[],wins:[0,0],winner:null}]
+      };
+      await saveData();
+    }
+    renderAll();
+    setStatusOk("Loaded ✓");
+  } catch (e){
+    console.error(e);
+    setStatusErr("Error loading data.\n\n" + (e?.message || e));
   }
-  renderAll();
 }
 
 async function saveData(){
@@ -144,10 +167,6 @@ function flattenMatchesInStoredOrder(){
   return all;
 }
 
-/**
- * Rebuild seasons from scratch based on match order currently stored.
- * This makes deletion safe even if you delete an old match that affects later seasons.
- */
 function rebuildSeasonsFromMatches(allMatches){
   const seasons = [];
   let current = { matches: [], wins: [0,0], winner: null };
@@ -155,7 +174,6 @@ function rebuildSeasonsFromMatches(allMatches){
   for(const match of allMatches){
     current.matches.push(match);
 
-    // winner is assumed to be 0 or 1 in current system
     if(match && (match.winner === 0 || match.winner === 1)){
       current.wins[match.winner]++;
 
@@ -167,14 +185,11 @@ function rebuildSeasonsFromMatches(allMatches){
     }
   }
 
-  // Always keep an open season at the end
   seasons.push(current);
-
   data.seasons = seasons;
 }
 
 function getCurrentSeason(){
-  // We always keep an open season at end after rebuild
   return data.seasons[data.seasons.length-1];
 }
 
@@ -193,8 +208,6 @@ function calculateStats(){
       (m.games || []).forEach(g=>{
         const a = g.a;
         const b = g.g;
-
-        // Guard against weird/partial values
         if(typeof a !== "number" || typeof b !== "number") return;
 
         stats[0].gamesWon += a>b ? 1 : 0;
@@ -211,32 +224,8 @@ function calculateStats(){
   return stats.sort((a,b)=>b.seasons-a.seasons);
 }
 
-function renderAll(){
-  renderLeaderboard();
-  renderSeasonScore();
-  renderHistory();
-  renderCharts();
-}
-
-function renderLeaderboard(){
-  let stats=calculateStats();
-  let html="<tr><th>Player</th><th>Seasons</th><th>Matches</th><th>Games W</th><th>Games L</th><th>Points Diff</th></tr>";
-  stats.forEach(p=>{
-    html+=`<tr>
-      <td>${p.name}</td>
-      <td>${p.seasons}</td>
-      <td>${p.matches}</td>
-      <td>${p.gamesWon}</td>
-      <td>${p.gamesLost}</td>
-      <td>${p.pointsDiff}</td>
-    </tr>`;
-  });
-  document.getElementById("leaderboard").innerHTML=html;
-}
 function computeWeekdayWinRates(){
   const labels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-
-  // totals[w][p] and wins[w][p]
   const totals = labels.map(() => [0,0]);
   const wins = labels.map(() => [0,0]);
 
@@ -258,15 +247,47 @@ function computeWeekdayWinRates(){
   const alexRates = labels.map((_, i) => totals[i][0] ? wins[i][0] / totals[i][0] : 0);
   const georgeRates = labels.map((_, i) => totals[i][1] ? wins[i][1] / totals[i][1] : 0);
 
-  return { labels, alexRates, georgeRates, totals, wins };
+  return { labels, alexRates, georgeRates };
 }
+
+function renderAll(){
+  renderLeaderboard();
+  renderSeasonScore();
+  renderHistory();
+  renderCharts();
+}
+
+function renderLeaderboard(){
+  const stats = calculateStats();
+  let html="<tr><th>Player</th><th>Seasons</th><th>Matches</th><th>Games W</th><th>Games L</th><th>Points Diff</th></tr>";
+  stats.forEach(p=>{
+    html+=`<tr>
+      <td>${p.name}</td>
+      <td>${p.seasons}</td>
+      <td>${p.matches}</td>
+      <td>${p.gamesWon}</td>
+      <td>${p.gamesLost}</td>
+      <td>${p.pointsDiff}</td>
+    </tr>`;
+  });
+  document.getElementById("leaderboard").innerHTML=html;
+}
+
 function renderSeasonScore(){
-  let s=getCurrentSeason();
+  const s = getCurrentSeason();
   document.getElementById("seasonScore").innerText =
     "Alex " + (s.wins?.[0] ?? 0) + " - " + (s.wins?.[1] ?? 0) + " George";
-
   document.getElementById("seasonMeta").innerText =
     "Season " + data.seasons.length + " (current)";
+}
+
+function escapeHtml(str){
+  return String(str)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
 
 function renderHistory(){
@@ -281,17 +302,15 @@ function renderHistory(){
     }
 
     s.matches.forEach((m, mi)=>{
-const date = m.date || "";
-const time = m.time || "";
-const when = formatDateTimeNice(date, time);
-      let report = m.report || "";
-      let gamesStr = (m.games || []).map(g => `${g.a}-${g.g}`).join(", ");
+      const when = formatDateTimeNice(m.date || "", m.time || "");
+      const report = m.report || "";
+      const gamesStr = (m.games || []).map(g => `${g.a}-${g.g}`).join(", ");
 
       html += `<div style="margin-top:8px; padding:8px; border:1px solid #eee; border-radius:10px;">
         <div class="row">
           <div>
             <b>Match ${mi+1}</b>
-            <span class="muted">• Winner: ${data.players[m.winner] ?? "N/A"} • ${date} ${time}</span>
+            <span class="muted">• Winner: ${data.players[m.winner] ?? "N/A"} • ${when}</span>
           </div>
           <div style="margin-left:auto;">
             <button class="small danger" onclick="deleteMatch(${si}, ${mi})">Delete</button>
@@ -306,19 +325,9 @@ const when = formatDateTimeNice(date, time);
   document.getElementById("history").innerHTML=html;
 }
 
-function escapeHtml(str){
-  return String(str)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
 function renderCharts(){
-  let stats=calculateStats();
+  const stats = calculateStats();
 
-  // prevent charts stacking on rerender
   if(seasonChartInstance) seasonChartInstance.destroy();
   if(matchChartInstance) matchChartInstance.destroy();
   if(weekdayWinRateChartInstance) weekdayWinRateChartInstance.destroy();
@@ -338,27 +347,21 @@ function renderCharts(){
       datasets:[{label:"Matches Won",data:stats.map(p=>p.matches)}]
     }
   });
-}
-const wr = computeWeekdayWinRates();
 
-weekdayWinRateChartInstance = new Chart(document.getElementById("weekdayWinRateChart"),{
-  type:'bar',
-  data:{
-    labels: wr.labels,
-    datasets:[
-      { label:"Alex win rate", data: wr.alexRates },
-      { label:"George win rate", data: wr.georgeRates }
-    ]
-  },
-  options: {
-    scales: {
-      y: {
-        min: 0,
-        max: 1
-      }
-    }
-  }
-});
+  const wr = computeWeekdayWinRates();
+  weekdayWinRateChartInstance = new Chart(document.getElementById("weekdayWinRateChart"),{
+    type:'bar',
+    data:{
+      labels: wr.labels,
+      datasets:[
+        { label:"Alex win rate", data: wr.alexRates },
+        { label:"George win rate", data: wr.georgeRates }
+      ]
+    },
+    options: { scales: { y: { min: 0, max: 1 } } }
+  });
+}
+
 function createInputs(){
   let html="";
   for(let i=0;i<5;i++){
@@ -367,64 +370,65 @@ function createInputs(){
   html+=`Date: <input type="date" id="matchDate"> Time: <input type="time" id="matchTime"><br>`;
   html+=`Match Report (optional):<br><textarea id="matchReport"></textarea><br>`;
   document.getElementById("inputs").innerHTML=html;
-
-  // default to now on load
   setDateTimeToNow();
 }
 
 window.addMatch = async function(){
-  let games=[];
-  let wins=[0,0];
+  try {
+    let games=[];
+    let wins=[0,0];
 
-  for(let i=0;i<5;i++){
-    let a=parseInt(document.getElementById("a"+i).value);
-    let b=parseInt(document.getElementById("b"+i).value);
-
-    if(!isNaN(a) && !isNaN(b)){
-      games.push({ a: a, g: b });
-      if(a>b) wins[0]++;
-      if(b>a) wins[1]++;
+    for(let i=0;i<5;i++){
+      const a = parseInt(document.getElementById("a"+i).value);
+      const b = parseInt(document.getElementById("b"+i).value);
+      if(!isNaN(a) && !isNaN(b)){
+        games.push({ a: a, g: b });
+        if(a>b) wins[0]++;
+        if(b>a) wins[1]++;
+      }
     }
+
+    if(wins[0]===0 && wins[1]===0) return alert("Enter at least one game score.");
+
+    const winner = wins[0] > wins[1] ? 0 : 1;
+    const date = document.getElementById("matchDate").value;
+    const time = document.getElementById("matchTime").value;
+    const report = document.getElementById("matchReport").value;
+
+    const match = { games, winner, date, time, report };
+
+    const all = flattenMatchesInStoredOrder();
+    all.push(match);
+    rebuildSeasonsFromMatches(all);
+
+    await saveData();
+    resetMatchEntryForm();
+    loadData();
+  } catch (e){
+    console.error(e);
+    alert("Error adding match. Check Console.");
   }
-
-  if(wins[0]===0 && wins[1]===0) return alert("Enter at least one game score.");
-
-  let winner = wins[0] > wins[1] ? 0 : 1;
-  let date = document.getElementById("matchDate").value;
-  let time = document.getElementById("matchTime").value;
-  let report = document.getElementById("matchReport").value;
-
-  const match = { games, winner, date, time, report };
-
-  // Add match to current season, then rebuild seasons to keep everything consistent
-  const all = flattenMatchesInStoredOrder();
-  all.push(match);
-  rebuildSeasonsFromMatches(all);
-
-  await saveData();
-
-  // UX: reset entry immediately
-  resetMatchEntryForm();
-
-  // refresh UI from DB
-  loadData();
 };
 
 window.deleteMatch = async function(seasonIndex, matchIndex){
-  const ok = confirm(`Delete Season ${seasonIndex+1} - Match ${matchIndex+1}?\nThis can't be undone.`);
-  if(!ok) return;
+  try {
+    const ok = confirm(`Delete Season ${seasonIndex+1} - Match ${matchIndex+1}?\nThis can't be undone.`);
+    if(!ok) return;
 
-  // Flatten, remove the selected match (by position in stored order), rebuild seasons
-  const all = [];
-  data.seasons.forEach((s, si)=>{
-    (s.matches || []).forEach((m, mi)=>{
-      if(!(si === seasonIndex && mi === matchIndex)) all.push(m);
+    const all = [];
+    data.seasons.forEach((s, si)=>{
+      (s.matches || []).forEach((m, mi)=>{
+        if(!(si === seasonIndex && mi === matchIndex)) all.push(m);
+      });
     });
-  });
 
-  rebuildSeasonsFromMatches(all);
-  await saveData();
-  loadData();
+    rebuildSeasonsFromMatches(all);
+    await saveData();
+    loadData();
+  } catch (e){
+    console.error(e);
+    alert("Error deleting match. Check Console.");
+  }
 };
 
 document.getElementById("addMatchBtn").addEventListener("click", () => {
