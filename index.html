@@ -1,1 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alex vs George</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+<style>
+body { font-family: -apple-system; background:#f4f6f8; padding:20px; }
+.card { background:white; padding:15px; margin-bottom:15px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,0.08); }
+input { width:45px; margin:3px; }
+button { padding:8px 12px; border-radius:8px; border:none; background:black; color:white; }
+table { width:100%; border-collapse:collapse; }
+th,td { padding:6px; text-align:center; border-bottom:1px solid #eee; }
+</style>
+</head>
+<body>
+
+<h1>🏆 Alex vs George</h1>
+
+<div class="card">
+<h2>Leaderboard</h2>
+<table id="leaderboard"></table>
+</div>
+
+<div class="card">
+<h2>Current Season</h2>
+<div id="seasonScore"></div>
+</div>
+
+<div class="card">
+<h2>Add Match</h2>
+<div id="inputs"></div>
+<button onclick="addMatch()">Add Match</button>
+</div>
+
+<div class="card">
+<h2>History</h2>
+<div id="history"></div>
+</div>
+
+<div class="card">
+<h2>Charts</h2>
+<canvas id="seasonChart"></canvas>
+<br><br>
+<canvas id="matchChart"></canvas>
+</div>
+
+<script type="module">
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDfpeuk-5wI3bAAOh799W20ZjCNKj6G4Nc",
+  authDomain: "squash-rivalry.firebaseapp.com",
+  projectId: "squash-rivalry",
+  storageBucket: "squash-rivalry.firebasestorage.app",
+  messagingSenderId: "9288441167",
+  appId: "1:9288441167:web:2bf24a4bfdbe7af385b93a"
+};
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+let data;
+
+async function loadData(){
+  const snap = await getDoc(doc(db,"squash","main"));
+  if(snap.exists()){
+    data = snap.data();
+  } else {
+    data = {
+      players:["Alex","George"],
+      seasons:[{matches:[],wins:[0,0],winner:null}]
+    };
+    saveData();
+  }
+  renderAll();
+}
+
+async function saveData(){
+  await setDoc(doc(db,"squash","main"),data);
+}
+
+function getCurrentSeason(){
+  let s = data.seasons[data.seasons.length-1];
+  if(s.winner!==null){
+    s={matches:[],wins:[0,0],winner:null};
+    data.seasons.push(s);
+  }
+  return s;
+}
+
+function calculateStats(){
+  let stats=[
+    {name:"Alex",seasons:0,matches:0},
+    {name:"George",seasons:0,matches:0}
+  ];
+  data.seasons.forEach(s=>{
+    if(s.winner!==null) stats[s.winner].seasons++;
+    s.matches.forEach(m=>stats[m.winner].matches++);
+  });
+  return stats.sort((a,b)=>b.seasons-a.seasons);
+}
+
+function renderAll(){
+  renderLeaderboard();
+  renderSeason();
+  renderHistory();
+  renderCharts();
+}
+
+function renderLeaderboard(){
+  let stats=calculateStats();
+  let html="<tr><th>Player</th><th>Seasons</th><th>Matches</th></tr>";
+  stats.forEach(p=>{
+    html+=`<tr><td>${p.name}</td><td>${p.seasons}</td><td>${p.matches}</td></tr>`;
+  });
+  document.getElementById("leaderboard").innerHTML=html;
+}
+
+function renderSeason(){
+  let s=getCurrentSeason();
+  document.getElementById("seasonScore").innerText=
+  "Alex "+s.wins[0]+" - "+s.wins[1]+" George";
+}
+
+function renderHistory(){
+  let html="";
+  data.seasons.forEach((s,i)=>{
+    html+="Season "+(i+1)+"<br>";
+    s.matches.forEach((m,j)=>{
+      html+="Match "+(j+1)+" - "+data.players[m.winner]+"<br>";
+    });
+    html+="<br>";
+  });
+  document.getElementById("history").innerHTML=html;
+}
+
+function renderCharts(){
+  let stats=calculateStats();
+  new Chart(document.getElementById("seasonChart"),{
+    type:'bar',
+    data:{labels:stats.map(p=>p.name),
+    datasets:[{label:"Seasons Won",data:stats.map(p=>p.seasons)}]}
+  });
+  new Chart(document.getElementById("matchChart"),{
+    type:'bar',
+    data:{labels:stats.map(p=>p.name),
+    datasets:[{label:"Matches Won",data:stats.map(p=>p.matches)}]}
+  });
+}
+
+function createInputs(){
+  let html="";
+  for(let i=0;i<5;i++){
+    html+=`Game ${i+1}: 
+    <input id="a${i}" type="number"> -
+    <input id="b${i}" type="number"><br>`;
+  }
+  document.getElementById("inputs").innerHTML=html;
+}
+
+window.addMatch=async function(){
+  let wins=[0,0];
+  let games=[];
+  for(let i=0;i<5;i++){
+    let a=parseInt(document.getElementById("a"+i).value);
+    let b=parseInt(document.getElementById("b"+i).value);
+    if(!isNaN(a)&&!isNaN(b)){
+      games.push([a,b]);
+      if(a>b) wins[0]++;
+      if(b>a) wins[1]++;
+    }
+  }
+  if(wins[0]===0&&wins[1]===0) return alert("Enter scores");
+  let winner=wins[0]>wins[1]?0:1;
+  let s=getCurrentSeason();
+  s.matches.push({games,winner});
+  s.wins[winner]++;
+  if(s.wins[winner]===5) s.winner=winner;
+  await saveData();
+  loadData();
+}
+
+createInputs();
+loadData();
+
+</script>
+</body>
+</html>
