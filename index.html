@@ -102,13 +102,17 @@ function calculateStats(){
     s.matches.forEach(m=>{
       stats[m.winner].matches++;
       m.games.forEach(g=>{
-        stats[0].gamesWon += g[0]>g[1]?1:0;
-        stats[1].gamesWon += g[1]>g[0]?1:0;
-        stats[0].gamesLost += g[0]<g[1]?1:0;
-        stats[1].gamesLost += g[1]<g[0]?1:0;
-        stats[0].pointsDiff += g[0]-g[1];
-        stats[1].pointsDiff += g[1]-g[0];
-      });
+  const a = g.a;
+  const b = g.g;
+
+  stats[0].gamesWon += a>b ? 1 : 0;
+  stats[1].gamesWon += b>a ? 1 : 0;
+  stats[0].gamesLost += a<b ? 1 : 0;
+  stats[1].gamesLost += b<a ? 1 : 0;
+
+  stats[0].pointsDiff += a - b;
+  stats[1].pointsDiff += b - a;
+});
     });
   });
   return stats.sort((a,b)=>b.seasons-a.seasons);
@@ -144,7 +148,7 @@ function renderHistory(){
       let date = m.date || "N/A";
       let time = m.time || "N/A";
       let report = m.report || "";
-      html+=`Match ${j+1} - Winner: ${data.players[m.winner]} | Date: ${date} ${time} | Games: ${m.games.map(g=>g.join("-")).join(", ")}<br>`;
+      html+=`Match ${j+1} - Winner: ${data.players[m.winner]} | Date: ${date} ${time} | Games: ${m.games.map(g => `${g.a}-${g.g}`).join(", ")}<br>`;
       if(report) html+="&nbsp;&nbsp;Report: "+report+"<br>";
     });
     html+="<br>";
@@ -185,11 +189,7 @@ window.addMatch=async function(){
     let a=parseInt(document.getElementById("a"+i).value);
     let b=parseInt(document.getElementById("b"+i).value);
     if(!isNaN(a) && !isNaN(b)){
-      // 2-clear points logic
-      while(a>=14 && b>=14 && Math.abs(a-b)<2){
-        if(a>b) a++; else b++;
-      }
-      games.push([a,b]);
+            games.push({ a: a, g: b });
       if(a>b) wins[0]++;
       if(b>a) wins[1]++;
     }
