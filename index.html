@@ -32,8 +32,7 @@ th,td { padding:6px; text-align:center; border-bottom:1px solid #eee; }
 <div class="card">
 <h2>Add Match</h2>
 <div id="inputs"></div>
-<button onclick="addMatch()">Add Match</button>
-</div>
+<button id="addMatchBtn">Add Match</button></div>
 
 <div class="card">
 <h2>Match History</h2>
@@ -166,7 +165,9 @@ function renderCharts(){
     datasets:[{label:"Matches Won",data:stats.map(p=>p.matches)}]}
   });
 }
-
+document.getElementById("addMatchBtn").addEventListener("click", () => {
+  window.addMatch();
+});
 function createInputs(){
   let html="";
   for(let i=0;i<5;i++){
