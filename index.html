@@ -1,35 +1,278 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Alex vs George</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#f4f6f8; padding:20px; }
-.card { background:white; padding:15px; margin-bottom:15px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,0.08); }
-input, textarea, select { width: 70px; margin:3px; }
-textarea { width: 100%; height:50px; }
-button { padding:8px 12px; border-radius:8px; border:none; background:black; color:white; margin-top:5px; cursor:pointer; }
-button.danger { background:#b00020; }
-button.small { padding:4px 8px; border-radius:6px; font-size:12px; margin-left:8px; }
-table { width:100%; border-collapse:collapse; }
-th,td { padding:6px; text-align:center; border-bottom:1px solid #eee; }
-.muted { color:#666; font-size:12px; }
+:root{
+  --bg:#f4f6f8;
+  --card:#ffffff;
+  --text:#111111;
+  --muted:#666666;
+  --line:#e8ebef;
+  --shadow:0 2px 8px rgba(0,0,0,0.08);
+  --ok-bg:#e9f7ee;
+  --ok-text:#0b6b0b;
+  --nr-bg:#fdecec;
+  --nr-text:#b00020;
+  --wild-bg:#fff5e6;
+  --wild-text:#9a5b00;
+  --draw-bg:#eef2ff;
+  --draw-text:#3346b0;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 14px 14px 28px 14px;
+}
+
+h1, h2, h3 { margin: 0 0 10px 0; }
+
+h1 {
+  font-size: 28px;
+  line-height: 1.1;
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+h2 {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.card {
+  background: var(--card);
+  padding: 14px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.muted { color: var(--muted); font-size: 12px; }
+.smallnote { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.35; }
+.highlight { font-size: 20px; font-weight: 700; line-height: 1.2; }
+
 .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-.grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:8px; }
-.badge-ok { background:#e9f7ee; color:#0b6b0b; }
-.badge-nr { background:#fdecec; color:#b00020; }
-.badge-wild { background:#fff5e6; color:#9a5b00; }
-.badge-draw { background:#eef2ff; color:#3346b0; }
-#status { margin: 10px 0 15px 0; }
+.stack { display:flex; flex-direction:column; gap:10px; }
+
+input, textarea, select {
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #d8dde3;
+  border-radius: 10px;
+  font-size: 16px;
+  background: white;
+}
+
+textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+button {
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: none;
+  background: black;
+  color: white;
+  margin-top: 6px;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+button.danger { background:#b00020; }
+button.small {
+  padding:8px 10px;
+  border-radius:10px;
+  font-size:13px;
+  margin-left:8px;
+  margin-top: 0;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+table {
+  width:100%;
+  border-collapse:collapse;
+  min-width: 420px;
+}
+
+th,td {
+  padding:8px 6px;
+  text-align:center;
+  border-bottom:1px solid var(--line);
+  font-size: 14px;
+}
+
+.badge {
+  display:inline-block;
+  padding:3px 8px;
+  border-radius:999px;
+  font-size:12px;
+  margin-left:8px;
+  margin-top: 4px;
+}
+
+.badge-ok { background:var(--ok-bg); color:var(--ok-text); }
+.badge-nr { background:var(--nr-bg); color:var(--nr-text); }
+.badge-wild { background:var(--wild-bg); color:var(--wild-text); }
+.badge-draw { background:var(--draw-bg); color:var(--draw-text); }
+
+#status { margin: 8px 0 14px 0; }
 .status-ok { color:#0b6b0b; }
 .status-err { color:#b00020; white-space: pre-wrap; }
-.smallnote { font-size:12px; color:#666; margin-top:6px; }
-hr { border:none; border-top:1px solid #eee; margin:12px 0; }
-.section-title { margin-bottom:6px; }
-.highlight { font-size:18px; font-weight:700; }
+
+.grid2 {
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+hr {
+  border:none;
+  border-top:1px solid var(--line);
+  margin:14px 0;
+}
+
+.tabbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0 14px 0;
+  background: var(--bg);
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.tab-btn {
+  background: white;
+  color: #111;
+  border: 1px solid #d9dee4;
+  box-shadow: var(--shadow);
+  margin-top: 0;
+  font-weight: 600;
+}
+
+.tab-btn.active {
+  background: black;
+  color: white;
+  border-color: black;
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.kpiRow {
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:10px;
+}
+
+.kpi {
+  background:#f8fafb;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px;
+}
+
+.kpi-label {
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:4px;
+}
+
+.kpi-value {
+  font-size:18px;
+  font-weight:700;
+}
+
+.form-grid {
+  display:grid;
+  grid-template-columns: 1fr;
+  gap:10px;
+}
+
+.score-row {
+  display:grid;
+  grid-template-columns: 92px 1fr 26px 1fr;
+  gap:8px;
+  align-items:center;
+  margin-bottom:8px;
+}
+
+.score-label {
+  font-size:14px;
+  color:#222;
+}
+
+.score-head {
+  display:grid;
+  grid-template-columns: 92px 1fr 26px 1fr;
+  gap:8px;
+  align-items:center;
+  margin-bottom:8px;
+}
+
+.score-head div {
+  font-size:12px;
+  color:var(--muted);
+  text-align:center;
+}
+
+.score-head div:first-child {
+  text-align:left;
+}
+
+.match-card {
+  margin-top:10px;
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:14px;
+}
+
+.meta-list {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  margin-top:6px;
+  font-size:12px;
+  color:var(--muted);
+}
+
+.empty-state {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (min-width: 820px) {
+  body {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  .grid2 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
 </style>
 </head>
 <body>
@@ -37,55 +280,82 @@ hr { border:none; border-top:1px solid #eee; margin:12px 0; }
 <h1>🏆 Alex vs George</h1>
 <div id="status" class="muted">Loading…</div>
 
-<div class="card">
-  <h2>Current Season Leaderboard</h2>
-  <div class="smallnote">Ranked by current season match wins. Overall points difference includes unresolved matches. Unresolved-match point difference is the tiebreak if nobody reaches 5 wins by match 10.</div>
-  <table id="seasonLeaderboard"></table>
+<div class="tabbar">
+  <button class="tab-btn active" data-tab="homeTab">Home</button>
+  <button class="tab-btn" data-tab="analyticsTab">Analytics</button>
+  <button class="tab-btn" data-tab="historyTab">History</button>
 </div>
 
-<div class="card">
-  <h2>Current Season</h2>
-  <div id="seasonScore" class="highlight"></div>
-  <div id="seasonMeta" class="muted"></div>
-  <div id="wildcardMeta" class="muted" style="margin-top:6px;"></div>
-</div>
+<div id="homeTab" class="tab-panel active">
+  <div class="card">
+    <h2>Current Season</h2>
+    <div id="seasonScore" class="highlight"></div>
+    <div id="seasonMeta" class="muted"></div>
+    <div id="wildcardMeta" class="muted" style="margin-top:6px;"></div>
 
-<div class="card">
-  <h2>All-Time Leaderboard</h2>
-  <div class="smallnote">Ordered by <b>Seasons Won</b>. Drawn seasons count as <b>0.5</b> each.</div>
-  <table id="leaderboard"></table>
-</div>
-
-<div class="card">
-  <h2>Add Match</h2>
-  <div class="smallnote">Enter each game score as <b>Alex – George</b>. A match is “Completed” only when someone wins <b>3 valid games</b> (to 15, win by 2).</div>
-  <div id="inputs"></div>
-  <button id="addMatchBtn">Add Match</button>
-</div>
-
-<div class="card">
-  <h2>Match History</h2>
-  <div class="muted">Tip: Deleting a match automatically recalculates seasons, wildcard holders, and all stats.</div>
-  <div id="history"></div>
-</div>
-
-<div class="card">
-  <h2>Charts</h2>
-
-  <div class="smallnote"><b>Win % by day of week</b> (completed matches only). Bars are 0–100%.</div>
-  <canvas id="weekdayWinRateChart"></canvas>
-
-  <hr>
-
-  <div class="grid2">
-    <div>
-      <div class="smallnote"><b>Comeback Match Wins (count)</b>: number of completed matches won where the winner trailed by 1+ games at some point.</div>
-      <canvas id="comebackMatchChart"></canvas>
+    <div class="kpiRow" style="margin-top:12px;">
+      <div class="kpi">
+        <div class="kpi-label">Matches played</div>
+        <div class="kpi-value" id="matchesPlayedKpi">0/10</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Wildcard</div>
+        <div class="kpi-value" id="wildcardKpi">—</div>
+      </div>
     </div>
-    <div>
-      <div class="smallnote"><b>Comeback Seasons Won (count)</b>: number of seasons won where the winner trailed on season match wins at some point.</div>
-      <canvas id="comebackSeasonChart"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>Current Season Leaderboard</h2>
+    <div class="smallnote">Ranked by current season match wins. If nobody reaches 5 wins by match 10, the tiebreak is unresolved-match point difference. If still tied, the season is a draw.</div>
+    <div class="tableWrap">
+      <table id="seasonLeaderboard"></table>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>All-Time Leaderboard</h2>
+    <div class="smallnote">Ordered by <b>Seasons Won</b>. Drawn seasons count as <b>0.5</b> each.</div>
+    <div class="tableWrap">
+      <table id="leaderboard"></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Add Match</h2>
+    <div class="smallnote">Enter each game score as <b>Alex – George</b>. A completed match requires someone to win <b>3 valid games</b> (to 15, win by 2). Location, court, and pints are optional.</div>
+    <div id="inputs"></div>
+    <button id="addMatchBtn">Add Match</button>
+  </div>
+</div>
+
+<div id="analyticsTab" class="tab-panel">
+  <div class="card">
+    <h2>Charts</h2>
+
+    <div class="smallnote"><b>Win % by day of week</b> (completed matches only). Bars are 0–100%.</div>
+    <canvas id="weekdayWinRateChart"></canvas>
+
+    <hr>
+
+    <div class="grid2">
+      <div>
+        <div class="smallnote"><b>Comeback Match Wins (count)</b>: completed matches won after trailing by 1+ games at some point.</div>
+        <canvas id="comebackMatchChart"></canvas>
+      </div>
+      <div>
+        <div class="smallnote"><b>Comeback Seasons Won (count)</b>: seasons won after trailing on season match wins at some point.</div>
+        <canvas id="comebackSeasonChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="historyTab" class="tab-panel">
+  <div class="card">
+    <h2>Match History</h2>
+    <div class="muted">Tip: deleting a match recalculates seasons, wildcard holders, and all stats.</div>
+    <div id="history"></div>
   </div>
 </div>
 
@@ -111,6 +381,7 @@ let data;
 let weekdayWinRateChartInstance = null;
 let comebackMatchChartInstance = null;
 let comebackSeasonChartInstance = null;
+let currentTab = "homeTab";
 
 function setStatusOk(msg){
   const el = document.getElementById("status");
@@ -127,6 +398,10 @@ function pad2(n){ return String(n).padStart(2, "0"); }
 
 function formatNumberMaybeHalf(n){
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function formatSigned(n){
+  return `${n > 0 ? "+" : ""}${n}`;
 }
 
 function getWeekdayShortFromISODate(isoDate){
@@ -151,6 +426,7 @@ function setDateTimeToNow(){
   const dd = pad2(d.getDate());
   const hh = pad2(d.getHours());
   const mi = pad2(d.getMinutes());
+
   const dateEl = document.getElementById("matchDate");
   const timeEl = document.getElementById("matchTime");
   if(dateEl) dateEl.value = `${yyyy}-${mm}-${dd}`;
@@ -164,8 +440,16 @@ function resetMatchEntryForm(){
     if(a) a.value = "";
     if(b) b.value = "";
   }
+
   const report = document.getElementById("matchReport");
   if(report) report.value = "";
+
+  const location = document.getElementById("matchLocation");
+  const court = document.getElementById("matchCourt");
+  const pints = document.getElementById("matchPints");
+  if(location) location.value = "";
+  if(court) court.value = "";
+  if(pints) pints.value = "";
 
   const wild = document.getElementById("wildcardActive");
   if(wild) wild.checked = false;
@@ -199,11 +483,8 @@ async function loadData(){
       await saveData();
     }
 
-    // Rebuild using latest rules every load
     const allMatches = flattenMatchesInStoredOrderFromExistingData(data);
     rebuildSeasonsFromMatches(allMatches);
-
-    // Save rebuilt structure so Firestore stays aligned
     await saveData();
 
     renderAll();
@@ -241,7 +522,7 @@ function getValidGameWinner(a, g){
   const diff = Math.abs(a - g);
   if(max < 15) return null;
   if(diff < 2) return null;
-  return (a > g) ? 0 : 1; // 0=Alex, 1=George
+  return (a > g) ? 0 : 1;
 }
 
 function computeMatchOutcome(games){
@@ -312,11 +593,11 @@ function createEmptySeason(seasonIndex){
   const holder = ((data.firstWildcardHolder + seasonIndex) % 2);
   return {
     matches: [],
-    wins: [0,0],               // season match wins (wildcard win can add 2)
-    winner: null,              // 0,1 or null
+    wins: [0,0],
+    winner: null,
     isDraw: false,
     finished: false,
-    wildcardHolder: holder,    // 0 or 1
+    wildcardHolder: holder,
     wildcardUsed: false
   };
 }
@@ -333,6 +614,9 @@ function rebuildSeasonsFromMatches(allMatches){
       date: originalMatch.date || "",
       time: originalMatch.time || "",
       report: originalMatch.report || "",
+      location: originalMatch.location || "",
+      court: originalMatch.court || "",
+      pints: (typeof originalMatch.pints === "number" && !isNaN(originalMatch.pints)) ? originalMatch.pints : null,
       completed: !!originalMatch.completed,
       winner: (originalMatch.winner === 0 || originalMatch.winner === 1) ? originalMatch.winner : null,
       gameWins: Array.isArray(originalMatch.gameWins) ? originalMatch.gameWins : [0,0],
@@ -351,7 +635,6 @@ function rebuildSeasonsFromMatches(allMatches){
       current.wins[match.winner] += award;
     }
 
-    // Immediate season win: first to 5 season match wins
     if(current.wins[0] >= 5 || current.wins[1] >= 5){
       current.finished = true;
       current.winner = current.wins[0] >= 5 ? 0 : 1;
@@ -361,7 +644,6 @@ function rebuildSeasonsFromMatches(allMatches){
       continue;
     }
 
-    // Hard stop after 10 matches
     if(current.matches.length >= 10){
       current.finished = true;
 
@@ -566,28 +848,17 @@ function escapeHtml(str){
 }
 
 function renderAll(){
-  renderCurrentSeasonLeaderboard();
   renderSeasonScore();
+  renderCurrentSeasonLeaderboard();
   renderAllTimeLeaderboard();
   renderAddMatchForm();
   renderHistory();
-  renderCharts();
-}
 
-function renderCurrentSeasonLeaderboard(){
-  const stats = calculateCurrentSeasonStats();
-  let html = "<tr><th>Player</th><th>Match Wins</th><th>Overall Pts Diff</th><th>Unresolved Pts Diff</th></tr>";
-
-  stats.forEach(p => {
-    html += `<tr>
-      <td>${p.name}</td>
-      <td>${p.matchWins}</td>
-      <td>${p.overallPointsDiff > 0 ? "+" : ""}${p.overallPointsDiff}</td>
-      <td>${p.unresolvedPointsDiff > 0 ? "+" : ""}${p.unresolvedPointsDiff}</td>
-    </tr>`;
-  });
-
-  document.getElementById("seasonLeaderboard").innerHTML = html;
+  if(currentTab === "analyticsTab"){
+    renderCharts();
+  } else {
+    destroyCharts();
+  }
 }
 
 function renderSeasonScore(){
@@ -600,10 +871,29 @@ function renderSeasonScore(){
     "Alex " + (s.wins?.[0] ?? 0) + " - " + (s.wins?.[1] ?? 0) + " George";
 
   document.getElementById("seasonMeta").innerText =
-    `Season ${data.seasons.length} • Matches played: ${matchesPlayed}/10 • First to 5 season wins ends the season`;
+    `Season ${data.seasons.length} • First to 5 season wins, otherwise ends after 10 matches`;
 
   document.getElementById("wildcardMeta").innerText =
     `Wildcard holder: ${holderName} • Status: ${wildcardStatus}`;
+
+  document.getElementById("matchesPlayedKpi").textContent = `${matchesPlayed}/10`;
+  document.getElementById("wildcardKpi").textContent = `${holderName} • ${wildcardStatus}`;
+}
+
+function renderCurrentSeasonLeaderboard(){
+  const stats = calculateCurrentSeasonStats();
+  let html = "<tr><th>Player</th><th>Match Wins</th><th>Overall Pts Diff</th><th>Unresolved Pts Diff</th></tr>";
+
+  stats.forEach(p => {
+    html += `<tr>
+      <td>${p.name}</td>
+      <td>${p.matchWins}</td>
+      <td>${formatSigned(p.overallPointsDiff)}</td>
+      <td>${formatSigned(p.unresolvedPointsDiff)}</td>
+    </tr>`;
+  });
+
+  document.getElementById("seasonLeaderboard").innerHTML = html;
 }
 
 function renderAllTimeLeaderboard(){
@@ -615,8 +905,8 @@ function renderAllTimeLeaderboard(){
       <td>${p.name}</td>
       <td>${formatNumberMaybeHalf(p.seasons)}</td>
       <td>${p.completedMatches}</td>
-      <td>${p.gameDiff > 0 ? "+" : ""}${p.gameDiff}</td>
-      <td>${p.pointsDiff > 0 ? "+" : ""}${p.pointsDiff}</td>
+      <td>${formatSigned(p.gameDiff)}</td>
+      <td>${formatSigned(p.pointsDiff)}</td>
     </tr>`;
   });
 
@@ -628,13 +918,13 @@ function renderHistory(){
 
   data.seasons.forEach((s, si) => {
     let title = `Season ${si+1}`;
-    if(!s.finished){
-      title += " (current)";
-    }
+    if(!s.finished) title += " (current)";
 
     let resultText = "In progress";
+    let resultBadge = "";
     if(s.finished && s.isDraw){
       resultText = "Draw";
+      resultBadge = `<span class="badge badge-draw">Draw</span>`;
     } else if(s.finished && (s.winner === 0 || s.winner === 1)){
       resultText = `${data.players[s.winner]} won`;
     }
@@ -643,18 +933,14 @@ function renderHistory(){
     const unresolvedPD = getSeasonUnresolvedPointDiff(s);
 
     html += `<div style="margin-top:10px;">
-      <b>${title}</b>
-      <div class="muted">
-        Result: ${resultText} • Season wins: Alex ${s.wins?.[0] ?? 0} - ${s.wins?.[1] ?? 0} George •
-        Overall pts diff: ${overallPD > 0 ? "+" : ""}${overallPD} •
-        Unresolved pts diff: ${unresolvedPD > 0 ? "+" : ""}${unresolvedPD} •
-        Wildcard holder: ${data.players[s.wildcardHolder]} •
-        Wildcard used: ${s.wildcardUsed ? "Yes" : "No"}
+      <b>${title}</b> ${resultBadge}
+      <div class="muted" style="margin-top:4px;">
+        Result: ${resultText} • Season wins: Alex ${s.wins?.[0] ?? 0} - ${s.wins?.[1] ?? 0} George • Overall pts diff: ${formatSigned(overallPD)} • Unresolved pts diff: ${formatSigned(unresolvedPD)} • Wildcard holder: ${data.players[s.wildcardHolder]} • Wildcard used: ${s.wildcardUsed ? "Yes" : "No"}
       </div>
     </div>`;
 
     if(!s.matches || s.matches.length === 0){
-      html += `<div class="muted">No matches logged yet.</div>`;
+      html += `<div class="empty-state">No matches logged yet.</div>`;
       return;
     }
 
@@ -680,18 +966,24 @@ function renderHistory(){
         ? (m.wildcardActive ? "2 season wins to winner" : "1 season win to winner")
         : (m.wildcardActive ? "Unresolved points count double" : "No season win awarded");
 
-      html += `<div style="margin-top:8px; padding:8px; border:1px solid #eee; border-radius:10px;">
+      const extras = [];
+      if(m.location) extras.push(`Location: ${escapeHtml(m.location)}`);
+      if(m.court) extras.push(`Court: ${escapeHtml(m.court)}`);
+      if(m.pints !== null && m.pints !== "" && !isNaN(m.pints)) extras.push(`Pints: ${m.pints}`);
+
+      html += `<div class="match-card">
         <div class="row">
-          <div>
+          <div style="flex:1; min-width:0;">
             <b>Match ${mi+1}</b> ${statusBadge} ${wildcardBadge}
-            <div class="muted">Winner: ${winnerText} • ${when} • Games won: Alex ${gw[0]} - ${gw[1]} George • ${seasonWinImpact}</div>
+            <div class="muted" style="margin-top:4px;">Winner: ${winnerText} • ${when} • Games won: Alex ${gw[0]} - ${gw[1]} George • ${seasonWinImpact}</div>
+            ${extras.length ? `<div class="meta-list">${extras.map(x => `<div>${x}</div>`).join("")}</div>` : ""}
           </div>
-          <div style="margin-left:auto;">
+          <div>
             <button class="small danger" onclick="deleteMatch(${si}, ${mi})">Delete</button>
           </div>
         </div>
-        <div>Scores (Alex–George): ${gamesStr || "<span class='muted'>No game scores</span>"}</div>
-        ${report ? `<div class="muted">Report: ${escapeHtml(report)}</div>` : ""}
+        <div style="margin-top:8px;">Scores (Alex–George): ${gamesStr || "<span class='muted'>No game scores</span>"}</div>
+        ${report ? `<div class="muted" style="margin-top:6px;">Report: ${escapeHtml(report)}</div>` : ""}
       </div>`;
     });
   });
@@ -699,13 +991,32 @@ function renderHistory(){
   document.getElementById("history").innerHTML = html;
 }
 
+function destroyCharts(){
+  if(weekdayWinRateChartInstance){
+    weekdayWinRateChartInstance.destroy();
+    weekdayWinRateChartInstance = null;
+  }
+  if(comebackMatchChartInstance){
+    comebackMatchChartInstance.destroy();
+    comebackMatchChartInstance = null;
+  }
+  if(comebackSeasonChartInstance){
+    comebackSeasonChartInstance.destroy();
+    comebackSeasonChartInstance = null;
+  }
+}
+
 function renderCharts(){
-  if(weekdayWinRateChartInstance) weekdayWinRateChartInstance.destroy();
-  if(comebackMatchChartInstance) comebackMatchChartInstance.destroy();
-  if(comebackSeasonChartInstance) comebackSeasonChartInstance.destroy();
+  const weekdayEl = document.getElementById("weekdayWinRateChart");
+  const comebackMatchEl = document.getElementById("comebackMatchChart");
+  const comebackSeasonEl = document.getElementById("comebackSeasonChart");
+
+  if(!weekdayEl || !comebackMatchEl || !comebackSeasonEl) return;
+
+  destroyCharts();
 
   const wr = computeWeekdayWinRatesPercent();
-  weekdayWinRateChartInstance = new Chart(document.getElementById("weekdayWinRateChart"),{
+  weekdayWinRateChartInstance = new Chart(weekdayEl,{
     type:'bar',
     data:{
       labels: wr.labels,
@@ -714,27 +1025,39 @@ function renderCharts(){
         { label:"George win %", data: wr.georgePct }
       ]
     },
-    options: { scales: { y: { min: 0, max: 100 } } }
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: { y: { min: 0, max: 100 } }
+    }
   });
 
   const cm = computeComebackMatchWinCounts();
-  comebackMatchChartInstance = new Chart(document.getElementById("comebackMatchChart"),{
+  comebackMatchChartInstance = new Chart(comebackMatchEl,{
     type:'bar',
     data:{
       labels: ["Alex","George"],
       datasets:[{ label:"Comeback match wins (count)", data: cm.comebackWins }]
     },
-    options: { scales: { y: { beginAtZero: true } } }
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: { y: { beginAtZero: true } }
+    }
   });
 
   const cs = computeComebackSeasonWinCounts();
-  comebackSeasonChartInstance = new Chart(document.getElementById("comebackSeasonChart"),{
+  comebackSeasonChartInstance = new Chart(comebackSeasonEl,{
     type:'bar',
     data:{
       labels: ["Alex","George"],
       datasets:[{ label:"Comeback seasons won (count)", data: cs.comebackSeasons }]
     },
-    options: { scales: { y: { beginAtZero: true } } }
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: { y: { beginAtZero: true } }
+    }
   });
 }
 
@@ -744,45 +1067,89 @@ function renderAddMatchForm(){
   const wildcardAvailable = s && !s.wildcardUsed;
   const wildcardHolderName = s ? data.players[s.wildcardHolder] : "N/A";
 
-  let html="";
-  html += `<div class="row muted" style="font-weight:600;">
-    <div style="width:120px;"> </div>
-    <div style="width:70px; text-align:center;">Alex</div>
-    <div style="width:20px;"></div>
-    <div style="width:70px; text-align:center;">George</div>
+  let html = "";
+
+  html += `<div class="score-head">
+    <div></div>
+    <div>Alex</div>
+    <div></div>
+    <div>George</div>
   </div>`;
 
   for(let i=0;i<5;i++){
-    html += `<div class="row" style="align-items:center;">
-      <div style="width:120px;">Game ${i+1}</div>
-      <input id="a${i}" type="number" inputmode="numeric" />
-      <div style="width:20px; text-align:center;">–</div>
-      <input id="b${i}" type="number" inputmode="numeric" />
+    html += `<div class="score-row">
+      <div class="score-label">Game ${i+1}</div>
+      <input id="a${i}" type="number" inputmode="numeric">
+      <div style="text-align:center;">–</div>
+      <input id="b${i}" type="number" inputmode="numeric">
     </div>`;
   }
 
-  html += `<div style="margin-top:8px;">
-    Date: <input type="date" id="matchDate">
-    Time: <input type="time" id="matchTime">
+  html += `<div class="form-grid" style="margin-top:10px;">
+    <div>
+      <label class="muted">Date</label>
+      <input type="date" id="matchDate">
+    </div>
+    <div>
+      <label class="muted">Time</label>
+      <input type="time" id="matchTime">
+    </div>
+    <div>
+      <label class="muted">Location (optional)</label>
+      <input type="text" id="matchLocation" placeholder="e.g. Brixton Rec">
+    </div>
+    <div>
+      <label class="muted">Court (optional)</label>
+      <input type="text" id="matchCourt" placeholder="e.g. Court 2">
+    </div>
+    <div>
+      <label class="muted">Pints after (optional)</label>
+      <input type="number" step="0.5" min="0" id="matchPints" placeholder="e.g. 2">
+    </div>
   </div>`;
 
-  html += `<div style="margin-top:8px;" class="muted">
+  html += `<div style="margin-top:12px;" class="muted">
     Wildcard holder this season: <b>${wildcardHolderName}</b>
   </div>`;
 
   if(wildcardAvailable){
-    html += `<label style="display:block; margin:6px 0;">
-      <input id="wildcardActive" type="checkbox" style="width:auto;"> Activate wildcard for this match
+    html += `<label style="display:block; margin:8px 0;">
+      <input id="wildcardActive" type="checkbox" style="width:auto; margin-right:8px;">
+      Activate wildcard for this match
     </label>
     <div class="smallnote">If this match is won, the winner gets <b>2 season wins</b>. If unresolved, its points count <b>double</b> for unresolved-match tiebreaks.</div>`;
   } else {
     html += `<div class="smallnote">Wildcard already used this season.</div>`;
   }
 
-  html += `Match Report (optional):<br><textarea id="matchReport"></textarea><br>`;
+  html += `<div style="margin-top:12px;">
+    <label class="muted">Match Report (optional)</label>
+    <textarea id="matchReport" placeholder="Any notes on how the match went..."></textarea>
+  </div>`;
 
   document.getElementById("inputs").innerHTML = html;
   setDateTimeToNow();
+}
+
+/* ---------- TABS ---------- */
+function switchTab(tabId){
+  currentTab = tabId;
+
+  document.querySelectorAll(".tab-panel").forEach(el => {
+    el.classList.toggle("active", el.id === tabId);
+  });
+
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.tab === tabId);
+  });
+
+  if(tabId === "analyticsTab"){
+    renderCharts();
+  } else {
+    destroyCharts();
+  }
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 /* ---------- ACTIONS ---------- */
@@ -801,7 +1168,13 @@ window.addMatch = async function(){
 
     const date = document.getElementById("matchDate").value;
     const time = document.getElementById("matchTime").value;
-    const report = document.getElementById("matchReport").value;
+    const report = document.getElementById("matchReport").value.trim();
+    const location = document.getElementById("matchLocation").value.trim();
+    const court = document.getElementById("matchCourt").value.trim();
+
+    const pintsRaw = document.getElementById("matchPints").value;
+    const pintsParsed = parseFloat(pintsRaw);
+    const pints = pintsRaw === "" || isNaN(pintsParsed) ? null : pintsParsed;
 
     const currentSeason = getCurrentSeason();
     const wildcardAvailable = currentSeason && !currentSeason.wildcardUsed;
@@ -815,6 +1188,9 @@ window.addMatch = async function(){
       date,
       time,
       report,
+      location,
+      court,
+      pints,
       completed: outcome.completed,
       winner: outcome.winner,
       gameWins: outcome.gameWins,
@@ -829,6 +1205,7 @@ window.addMatch = async function(){
     await saveData();
     resetMatchEntryForm();
     await loadData();
+    switchTab("homeTab");
   } catch (e){
     console.error(e);
     alert("Error adding match. Check Console.");
@@ -858,6 +1235,10 @@ window.deleteMatch = async function(seasonIndex, matchIndex){
 
 document.getElementById("addMatchBtn").addEventListener("click", () => {
   window.addMatch();
+});
+
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
 loadData();
