@@ -47,6 +47,11 @@ h2 {
   line-height: 1.2;
 }
 
+h3 {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
 .card {
   background: var(--card);
   padding: 14px;
@@ -134,6 +139,12 @@ th,td {
 .status-err { color:#b00020; white-space: pre-wrap; }
 
 .grid2 {
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.grid3 {
   display:grid;
   grid-template-columns: 1fr;
   gap: 12px;
@@ -258,15 +269,69 @@ hr {
   font-size: 13px;
 }
 
+.pred-card {
+  background:#f8fafb;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px;
+}
+
+.pred-title {
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:5px;
+}
+
+.pred-main {
+  font-size:18px;
+  font-weight:700;
+  line-height:1.25;
+}
+
+.pred-sub {
+  font-size:13px;
+  color:var(--muted);
+  margin-top:6px;
+  line-height:1.35;
+}
+
+.streak-grid {
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:10px;
+}
+
+.streak-box {
+  background:#f8fafb;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px;
+}
+
+.streak-name {
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:4px;
+}
+
+.streak-value {
+  font-size:18px;
+  font-weight:700;
+}
+
 @media (min-width: 820px) {
   body {
-    max-width: 1000px;
+    max-width: 1100px;
     margin: 0 auto;
     padding: 20px;
   }
 
   .grid2 {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .grid3 {
+    grid-template-columns: 1fr 1fr 1fr;
   }
 
   .form-grid {
@@ -306,6 +371,23 @@ hr {
   </div>
 
   <div class="card">
+    <h2>Predictions</h2>
+    <div class="smallnote">Simple forecast based on all-time completed-match form, recent completed-match form, current season form, and current season position.</div>
+    <div class="grid2">
+      <div class="pred-card">
+        <div class="pred-title">Next match prediction</div>
+        <div class="pred-main" id="matchPredictionMain">—</div>
+        <div class="pred-sub" id="matchPredictionSub">—</div>
+      </div>
+      <div class="pred-card">
+        <div class="pred-title">Season prediction</div>
+        <div class="pred-main" id="seasonPredictionMain">—</div>
+        <div class="pred-sub" id="seasonPredictionSub">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>Current Season Leaderboard</h2>
     <div class="smallnote">Ranked by current season match wins. If nobody reaches 5 wins by match 10, the tiebreak is unresolved-match point difference. If still tied, the season is a draw.</div>
     <div class="tableWrap">
@@ -331,10 +413,48 @@ hr {
 
 <div id="analyticsTab" class="tab-panel">
   <div class="card">
+    <h2>Streaks</h2>
+    <div class="smallnote">Completed matches only.</div>
+    <div class="grid2">
+      <div>
+        <h3 style="margin-bottom:8px;">Alex</h3>
+        <div class="streak-grid">
+          <div class="streak-box">
+            <div class="streak-name">Current win streak</div>
+            <div class="streak-value" id="alexCurrentStreak">0</div>
+          </div>
+          <div class="streak-box">
+            <div class="streak-name">Longest win streak</div>
+            <div class="streak-value" id="alexLongestStreak">0</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <h3 style="margin-bottom:8px;">George</h3>
+        <div class="streak-grid">
+          <div class="streak-box">
+            <div class="streak-name">Current win streak</div>
+            <div class="streak-value" id="georgeCurrentStreak">0</div>
+          </div>
+          <div class="streak-box">
+            <div class="streak-name">Longest win streak</div>
+            <div class="streak-value" id="georgeLongestStreak">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>Charts</h2>
 
-    <div class="smallnote"><b>Win % by day of week</b> (completed matches only). Bars are 0–100%.</div>
+    <div class="smallnote"><b>Win % by day of week</b> (completed matches only). Labels show sample size. Bars are 0–100%.</div>
     <canvas id="weekdayWinRateChart"></canvas>
+
+    <hr>
+
+    <div class="smallnote"><b>Win % by time of day</b> (completed matches only). Buckets are based on logged match time.</div>
+    <canvas id="timeOfDayWinRateChart"></canvas>
 
     <hr>
 
@@ -379,6 +499,7 @@ const db = getFirestore(app);
 let data;
 
 let weekdayWinRateChartInstance = null;
+let timeOfDayWinRateChartInstance = null;
 let comebackMatchChartInstance = null;
 let comebackSeasonChartInstance = null;
 let currentTab = "homeTab";
@@ -402,6 +523,10 @@ function formatNumberMaybeHalf(n){
 
 function formatSigned(n){
   return `${n > 0 ? "+" : ""}${n}`;
+}
+
+function clamp(n, min, max){
+  return Math.max(min, Math.min(max, n));
 }
 
 function getWeekdayShortFromISODate(isoDate){
@@ -511,6 +636,18 @@ function flattenMatchesInStoredOrderFromExistingData(existingData){
   const all = [];
   (existingData.seasons || []).forEach(season => {
     (season.matches || []).forEach(match => all.push(match));
+  });
+  return all;
+}
+
+function getCompletedMatchesInStoredOrder(){
+  const all = [];
+  data.seasons.forEach(season => {
+    (season.matches || []).forEach(match => {
+      if(match && match.completed && (match.winner === 0 || match.winner === 1)){
+        all.push(match);
+      }
+    });
   });
   return all;
 }
@@ -770,9 +907,9 @@ function calculateCurrentSeasonStats(){
 
 /* ---------- ANALYTICS ---------- */
 function computeWeekdayWinRatesPercent(){
-  const labels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  const totals = labels.map(() => [0,0]);
-  const wins = labels.map(() => [0,0]);
+  const baseLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const totals = baseLabels.map(() => [0,0]);
+  const wins = baseLabels.map(() => [0,0]);
 
   data.seasons.forEach(season => {
     (season.matches || []).forEach(match => {
@@ -781,7 +918,7 @@ function computeWeekdayWinRatesPercent(){
       if(!match.date) return;
 
       const wd = getWeekdayShortFromISODate(match.date);
-      const idx = labels.indexOf(wd);
+      const idx = baseLabels.indexOf(wd);
       if(idx === -1) return;
 
       totals[idx][0] += 1;
@@ -790,8 +927,49 @@ function computeWeekdayWinRatesPercent(){
     });
   });
 
-  const alexPct = labels.map((_, i) => totals[i][0] ? (wins[i][0] / totals[i][0]) * 100 : 0);
-  const georgePct = labels.map((_, i) => totals[i][1] ? (wins[i][1] / totals[i][1]) * 100 : 0);
+  const labels = baseLabels.map((label, i) => `${label} (n=${totals[i][0]})`);
+  const alexPct = baseLabels.map((_, i) => totals[i][0] ? (wins[i][0] / totals[i][0]) * 100 : 0);
+  const georgePct = baseLabels.map((_, i) => totals[i][1] ? (wins[i][1] / totals[i][1]) * 100 : 0);
+
+  return { labels, alexPct, georgePct };
+}
+
+function getTimeBucket(timeStr){
+  if(!timeStr || typeof timeStr !== "string" || !timeStr.includes(":")) return null;
+  const hour = parseInt(timeStr.split(":")[0], 10);
+  if(isNaN(hour)) return null;
+
+  if(hour >= 5 && hour <= 11) return "Morning";
+  if(hour >= 12 && hour <= 16) return "Afternoon";
+  if(hour >= 17 && hour <= 21) return "Evening";
+  return "Late";
+}
+
+function computeTimeOfDayWinRatesPercent(){
+  const baseLabels = ["Morning","Afternoon","Evening","Late"];
+  const totals = baseLabels.map(() => [0,0]);
+  const wins = baseLabels.map(() => [0,0]);
+
+  data.seasons.forEach(season => {
+    (season.matches || []).forEach(match => {
+      if(!match || !match.completed) return;
+      if(match.winner !== 0 && match.winner !== 1) return;
+
+      const bucket = getTimeBucket(match.time);
+      if(!bucket) return;
+
+      const idx = baseLabels.indexOf(bucket);
+      if(idx === -1) return;
+
+      totals[idx][0] += 1;
+      totals[idx][1] += 1;
+      wins[idx][match.winner] += 1;
+    });
+  });
+
+  const labels = baseLabels.map((label, i) => `${label} (n=${totals[i][0]})`);
+  const alexPct = baseLabels.map((_, i) => totals[i][0] ? (wins[i][0] / totals[i][0]) * 100 : 0);
+  const georgePct = baseLabels.map((_, i) => totals[i][1] ? (wins[i][1] / totals[i][1]) * 100 : 0);
 
   return { labels, alexPct, georgePct };
 }
@@ -837,6 +1015,139 @@ function computeComebackSeasonWinCounts(){
   return { comebackSeasons };
 }
 
+function computeStreakStats(){
+  const matches = getCompletedMatchesInStoredOrder();
+
+  const current = [0,0];
+  const longest = [0,0];
+
+  let running = [0,0];
+
+  matches.forEach(m => {
+    const w = m.winner;
+    if(w !== 0 && w !== 1) return;
+    running[w] += 1;
+    running[1-w] = 0;
+    longest[w] = Math.max(longest[w], running[w]);
+  });
+
+  for(let i = matches.length - 1; i >= 0; i--){
+    const w = matches[i].winner;
+    if(w === 0){
+      current[0]++;
+      break;
+    }
+    if(w === 1){
+      current[1]++;
+      break;
+    }
+  }
+
+  if(matches.length > 0){
+    const lastWinner = matches[matches.length - 1].winner;
+    if(lastWinner === 0){
+      let c = 0;
+      for(let i = matches.length - 1; i >= 0; i--){
+        if(matches[i].winner === 0) c++;
+        else break;
+      }
+      current[0] = c;
+      current[1] = 0;
+    } else if(lastWinner === 1){
+      let c = 0;
+      for(let i = matches.length - 1; i >= 0; i--){
+        if(matches[i].winner === 1) c++;
+        else break;
+      }
+      current[1] = c;
+      current[0] = 0;
+    }
+  }
+
+  return {
+    alexCurrent: current[0],
+    georgeCurrent: current[1],
+    alexLongest: longest[0],
+    georgeLongest: longest[1]
+  };
+}
+
+/* ---------- PREDICTIONS ---------- */
+function computePredictionData(){
+  const completed = getCompletedMatchesInStoredOrder();
+  const recent = completed.slice(-6);
+  const currentSeason = getCurrentSeason();
+
+  const allTimeWins = [0,0];
+  completed.forEach(m => {
+    if(m.winner === 0 || m.winner === 1) allTimeWins[m.winner]++;
+  });
+
+  const recentWins = [0,0];
+  recent.forEach(m => {
+    if(m.winner === 0 || m.winner === 1) recentWins[m.winner]++;
+  });
+
+  const seasonCompletedWins = [...(currentSeason.wins || [0,0])];
+  const seasonUnresolvedDiff = getSeasonUnresolvedPointDiff(currentSeason);
+
+  const allTimeTotal = allTimeWins[0] + allTimeWins[1];
+  const recentTotal = recentWins[0] + recentWins[1];
+  const seasonWinTotal = seasonCompletedWins[0] + seasonCompletedWins[1];
+
+  const allTimeRateA = allTimeTotal ? allTimeWins[0] / allTimeTotal : 0.5;
+  const recentRateA = recentTotal ? recentWins[0] / recentTotal : 0.5;
+  const seasonRateA = seasonWinTotal ? seasonCompletedWins[0] / seasonWinTotal : 0.5;
+
+  let matchScoreA =
+    (allTimeRateA * 0.45) +
+    (recentRateA * 0.35) +
+    (seasonRateA * 0.20);
+
+  matchScoreA = clamp(matchScoreA, 0.15, 0.85);
+
+  const matchProbA = Math.round(matchScoreA * 100);
+  const matchProbG = 100 - matchProbA;
+
+  let projectedScore = "Alex 3–2 George";
+  if(matchProbA >= 65) projectedScore = "Alex 3–1 George";
+  if(matchProbA >= 75) projectedScore = "Alex 3–0 George";
+  if(matchProbA <= 35) projectedScore = "George 3–1 Alex";
+  if(matchProbA <= 25) projectedScore = "George 3–0 Alex";
+  if(matchProbA > 35 && matchProbA < 50) projectedScore = "George 3–2 Alex";
+
+  const matchesPlayed = (currentSeason.matches || []).length;
+  const matchesLeftMax = Math.max(0, 10 - matchesPlayed);
+
+  const seasonPositionScoreA =
+    ((seasonCompletedWins[0] - seasonCompletedWins[1]) * 0.12) +
+    ((seasonUnresolvedDiff) * 0.004) +
+    ((matchScoreA - 0.5) * 0.9);
+
+  let seasonProbA = clamp(0.5 + seasonPositionScoreA, 0.10, 0.90);
+
+  if(currentSeason.finished){
+    if(currentSeason.isDraw){
+      seasonProbA = 0.5;
+    } else if(currentSeason.winner === 0){
+      seasonProbA = 1;
+    } else if(currentSeason.winner === 1){
+      seasonProbA = 0;
+    }
+  }
+
+  const seasonProbG = 1 - seasonProbA;
+
+  return {
+    matchProbA,
+    matchProbG,
+    projectedScore,
+    seasonProbA: Math.round(seasonProbA * 100),
+    seasonProbG: Math.round(seasonProbG * 100),
+    matchesLeftMax
+  };
+}
+
 /* ---------- RENDER ---------- */
 function escapeHtml(str){
   return String(str)
@@ -849,13 +1160,14 @@ function escapeHtml(str){
 
 function renderAll(){
   renderSeasonScore();
+  renderPredictions();
   renderCurrentSeasonLeaderboard();
   renderAllTimeLeaderboard();
   renderAddMatchForm();
   renderHistory();
 
   if(currentTab === "analyticsTab"){
-    renderCharts();
+    renderAnalyticsTab();
   } else {
     destroyCharts();
   }
@@ -878,6 +1190,53 @@ function renderSeasonScore(){
 
   document.getElementById("matchesPlayedKpi").textContent = `${matchesPlayed}/10`;
   document.getElementById("wildcardKpi").textContent = `${holderName} • ${wildcardStatus}`;
+}
+
+function renderPredictions(){
+  const p = computePredictionData();
+  const currentSeason = getCurrentSeason();
+
+  let matchMain = "Too little data";
+  let matchSub = "Log a few completed matches and this will become more useful.";
+
+  if(getCompletedMatchesInStoredOrder().length > 0){
+    if(p.matchProbA >= 50){
+      matchMain = `Alex favoured (${p.matchProbA}%)`;
+    } else {
+      matchMain = `George favoured (${p.matchProbG}%)`;
+    }
+    matchSub = `Projected score: ${p.projectedScore}`;
+  }
+
+  let seasonMain = "Season too early to call";
+  let seasonSub = `Up to ${p.matchesLeftMax} matches still available in this season.`;
+
+  if(currentSeason.finished){
+    if(currentSeason.isDraw){
+      seasonMain = "Season finished as a draw";
+      seasonSub = "Both players receive 0.5 of a season win.";
+    } else if(currentSeason.winner === 0){
+      seasonMain = "Alex has won the season";
+      seasonSub = "Season complete.";
+    } else if(currentSeason.winner === 1){
+      seasonMain = "George has won the season";
+      seasonSub = "Season complete.";
+    }
+  } else {
+    if(p.seasonProbA >= 55){
+      seasonMain = `Alex more likely to win season (${p.seasonProbA}%)`;
+    } else if(p.seasonProbG >= 55){
+      seasonMain = `George more likely to win season (${p.seasonProbG}%)`;
+    } else {
+      seasonMain = "Season looks finely balanced";
+    }
+    seasonSub = `Forecast uses season position, unresolved points, and broader match form.`;
+  }
+
+  document.getElementById("matchPredictionMain").textContent = matchMain;
+  document.getElementById("matchPredictionSub").textContent = matchSub;
+  document.getElementById("seasonPredictionMain").textContent = seasonMain;
+  document.getElementById("seasonPredictionSub").textContent = seasonSub;
 }
 
 function renderCurrentSeasonLeaderboard(){
@@ -991,10 +1350,22 @@ function renderHistory(){
   document.getElementById("history").innerHTML = html;
 }
 
+function renderStreaks(){
+  const s = computeStreakStats();
+  document.getElementById("alexCurrentStreak").textContent = s.alexCurrent;
+  document.getElementById("georgeCurrentStreak").textContent = s.georgeCurrent;
+  document.getElementById("alexLongestStreak").textContent = s.alexLongest;
+  document.getElementById("georgeLongestStreak").textContent = s.georgeLongest;
+}
+
 function destroyCharts(){
   if(weekdayWinRateChartInstance){
     weekdayWinRateChartInstance.destroy();
     weekdayWinRateChartInstance = null;
+  }
+  if(timeOfDayWinRateChartInstance){
+    timeOfDayWinRateChartInstance.destroy();
+    timeOfDayWinRateChartInstance = null;
   }
   if(comebackMatchChartInstance){
     comebackMatchChartInstance.destroy();
@@ -1008,10 +1379,11 @@ function destroyCharts(){
 
 function renderCharts(){
   const weekdayEl = document.getElementById("weekdayWinRateChart");
+  const timeEl = document.getElementById("timeOfDayWinRateChart");
   const comebackMatchEl = document.getElementById("comebackMatchChart");
   const comebackSeasonEl = document.getElementById("comebackSeasonChart");
 
-  if(!weekdayEl || !comebackMatchEl || !comebackSeasonEl) return;
+  if(!weekdayEl || !timeEl || !comebackMatchEl || !comebackSeasonEl) return;
 
   destroyCharts();
 
@@ -1023,6 +1395,23 @@ function renderCharts(){
       datasets:[
         { label:"Alex win %", data: wr.alexPct },
         { label:"George win %", data: wr.georgePct }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: { y: { min: 0, max: 100 } }
+    }
+  });
+
+  const td = computeTimeOfDayWinRatesPercent();
+  timeOfDayWinRateChartInstance = new Chart(timeEl,{
+    type:'bar',
+    data:{
+      labels: td.labels,
+      datasets:[
+        { label:"Alex win %", data: td.alexPct },
+        { label:"George win %", data: td.georgePct }
       ]
     },
     options: {
@@ -1059,6 +1448,11 @@ function renderCharts(){
       scales: { y: { beginAtZero: true } }
     }
   });
+}
+
+function renderAnalyticsTab(){
+  renderStreaks();
+  renderCharts();
 }
 
 /* ---------- INPUTS ---------- */
@@ -1144,7 +1538,7 @@ function switchTab(tabId){
   });
 
   if(tabId === "analyticsTab"){
-    renderCharts();
+    renderAnalyticsTab();
   } else {
     destroyCharts();
   }
