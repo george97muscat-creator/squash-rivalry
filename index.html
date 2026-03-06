@@ -21,6 +21,8 @@
   --wild-text:#9a5b00;
   --draw-bg:#eef2ff;
   --draw-text:#3346b0;
+  --edit-bg:#fff8e8;
+  --edit-text:#8a5a00;
 }
 
 * { box-sizing: border-box; }
@@ -93,7 +95,12 @@ button {
   font-size: 15px;
 }
 
+button.secondary {
+  background: #6b7280;
+}
+
 button.danger { background:#b00020; }
+
 button.small {
   padding:8px 10px;
   border-radius:10px;
@@ -133,18 +140,13 @@ th,td {
 .badge-nr { background:var(--nr-bg); color:var(--nr-text); }
 .badge-wild { background:var(--wild-bg); color:var(--wild-text); }
 .badge-draw { background:var(--draw-bg); color:var(--draw-text); }
+.badge-edit { background:var(--edit-bg); color:var(--edit-text); }
 
 #status { margin: 8px 0 14px 0; }
 .status-ok { color:#0b6b0b; }
 .status-err { color:#b00020; white-space: pre-wrap; }
 
 .grid2 {
-  display:grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
-
-.grid3 {
   display:grid;
   grid-template-columns: 1fr;
   gap: 12px;
@@ -319,6 +321,41 @@ hr {
   font-weight:700;
 }
 
+.edit-banner {
+  background: var(--edit-bg);
+  color: var(--edit-text);
+  border: 1px solid #f1dfb2;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.bio-card {
+  background:#f8fafb;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px;
+}
+
+.bio-name {
+  font-size:14px;
+  font-weight:700;
+  margin-bottom:6px;
+}
+
+.bio-text {
+  font-size:14px;
+  line-height:1.45;
+}
+
+.action-row {
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
 @media (min-width: 820px) {
   body {
     max-width: 1100px;
@@ -328,10 +365,6 @@ hr {
 
   .grid2 {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .grid3 {
-    grid-template-columns: 1fr 1fr 1fr;
   }
 
   .form-grid {
@@ -388,6 +421,21 @@ hr {
   </div>
 
   <div class="card">
+    <h2>Player Bios</h2>
+    <div class="smallnote">Light-touch summaries generated from the rivalry data.</div>
+    <div class="grid2">
+      <div class="bio-card">
+        <div class="bio-name">Alex</div>
+        <div class="bio-text" id="alexBio">—</div>
+      </div>
+      <div class="bio-card">
+        <div class="bio-name">George</div>
+        <div class="bio-text" id="georgeBio">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>Current Season Leaderboard</h2>
     <div class="smallnote">Ranked by current season match wins. If nobody reaches 5 wins by match 10, the tiebreak is unresolved-match point difference. If still tied, the season is a draw.</div>
     <div class="tableWrap">
@@ -404,10 +452,17 @@ hr {
   </div>
 
   <div class="card">
-    <h2>Add Match</h2>
+    <h2 id="formTitle">Add Match</h2>
     <div class="smallnote">Enter each game score as <b>Alex – George</b>. A completed match requires someone to win <b>3 valid games</b> (to 15, win by 2). Location, court, and pints are optional.</div>
+
+    <div id="editBanner" class="edit-banner" style="display:none;"></div>
+
     <div id="inputs"></div>
-    <button id="addMatchBtn">Add Match</button>
+
+    <div class="action-row">
+      <button id="addMatchBtn">Add Match</button>
+      <button id="cancelEditBtn" class="secondary" style="display:none;">Cancel Edit</button>
+    </div>
   </div>
 </div>
 
@@ -474,7 +529,7 @@ hr {
 <div id="historyTab" class="tab-panel">
   <div class="card">
     <h2>Match History</h2>
-    <div class="muted">Tip: deleting a match recalculates seasons, wildcard holders, and all stats.</div>
+    <div class="muted">Tip: editing or deleting a match recalculates seasons, wildcard holders, and all stats.</div>
     <div id="history"></div>
   </div>
 </div>
@@ -497,18 +552,20 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 let data;
+let currentTab = "homeTab";
+let currentEdit = null; // { seasonIndex, matchIndex }
 
 let weekdayWinRateChartInstance = null;
 let timeOfDayWinRateChartInstance = null;
 let comebackMatchChartInstance = null;
 let comebackSeasonChartInstance = null;
-let currentTab = "homeTab";
 
 function setStatusOk(msg){
   const el = document.getElementById("status");
   el.className = "muted status-ok";
   el.textContent = msg;
 }
+
 function setStatusErr(msg){
   const el = document.getElementById("status");
   el.className = "muted status-err";
@@ -558,7 +615,7 @@ function setDateTimeToNow(){
   if(timeEl) timeEl.value = `${hh}:${mi}`;
 }
 
-function resetMatchEntryForm(){
+function clearMatchEntryFormFields(){
   for(let i=0;i<5;i++){
     const a = document.getElementById("a"+i);
     const b = document.getElementById("b"+i);
@@ -567,18 +624,23 @@ function resetMatchEntryForm(){
   }
 
   const report = document.getElementById("matchReport");
-  if(report) report.value = "";
-
   const location = document.getElementById("matchLocation");
   const court = document.getElementById("matchCourt");
   const pints = document.getElementById("matchPints");
+  const wild = document.getElementById("wildcardActive");
+
+  if(report) report.value = "";
   if(location) location.value = "";
   if(court) court.value = "";
   if(pints) pints.value = "";
-
-  const wild = document.getElementById("wildcardActive");
   if(wild) wild.checked = false;
+}
 
+function resetMatchEntryForm(){
+  currentEdit = null;
+  renderAddMatchForm();
+  updateFormModeUi();
+  clearMatchEntryFormFields();
   setDateTimeToNow();
 }
 
@@ -650,6 +712,19 @@ function getCompletedMatchesInStoredOrder(){
     });
   });
   return all;
+}
+
+function getMatchBySeasonAndIndex(seasonIndex, matchIndex){
+  const season = data.seasons?.[seasonIndex];
+  if(!season || !Array.isArray(season.matches)) return null;
+  return season.matches[matchIndex] || null;
+}
+
+function seasonHasOtherWildcard(seasonIndex, matchIndex){
+  const season = data.seasons?.[seasonIndex];
+  if(!season || !Array.isArray(season.matches)) return false;
+
+  return season.matches.some((m, idx) => idx !== matchIndex && !!m.wildcardActive);
 }
 
 /* ---------- RULE LOGIC ---------- */
@@ -815,7 +890,7 @@ function getCurrentSeason(){
 }
 
 /* ---------- STATS ---------- */
-function calculateAllTimeStats(){
+function calculateRawAllTimeStats(){
   let stats = [
     {name:"Alex", seasons:0, completedMatches:0, gamesWon:0, gamesLost:0, gameDiff:0, pointsDiff:0},
     {name:"George", seasons:0, completedMatches:0, gamesWon:0, gamesLost:0, gameDiff:0, pointsDiff:0}
@@ -868,7 +943,11 @@ function calculateAllTimeStats(){
     s.gameDiff = s.gamesWon - s.gamesLost;
   });
 
-  return stats.sort((a,b) => {
+  return stats;
+}
+
+function calculateAllTimeStats(){
+  return [...calculateRawAllTimeStats()].sort((a,b) => {
     if(b.seasons !== a.seasons) return b.seasons - a.seasons;
     if(b.completedMatches !== a.completedMatches) return b.completedMatches - a.completedMatches;
     if(b.gameDiff !== a.gameDiff) return b.gameDiff - a.gameDiff;
@@ -1020,7 +1099,6 @@ function computeStreakStats(){
 
   const current = [0,0];
   const longest = [0,0];
-
   let running = [0,0];
 
   matches.forEach(m => {
@@ -1030,18 +1108,6 @@ function computeStreakStats(){
     running[1-w] = 0;
     longest[w] = Math.max(longest[w], running[w]);
   });
-
-  for(let i = matches.length - 1; i >= 0; i--){
-    const w = matches[i].winner;
-    if(w === 0){
-      current[0]++;
-      break;
-    }
-    if(w === 1){
-      current[1]++;
-      break;
-    }
-  }
 
   if(matches.length > 0){
     const lastWinner = matches[matches.length - 1].winner;
@@ -1148,6 +1214,98 @@ function computePredictionData(){
   };
 }
 
+/* ---------- BIOS ---------- */
+function extractReportSignal(playerIndex){
+  const keywordsPositive = ["dominated","comfortable","clinical","sharp","strong","fit","solid","composed","focused","aggressive","attacking"];
+  const keywordsChaos = ["scrappy","chaotic","wild","messy","swing","momentum","rollercoaster","tight","battle","grind"];
+  const keywordsComeback = ["comeback","came back","recovered","turned it around","fightback"];
+
+  let positive = 0;
+  let chaos = 0;
+  let comebackWords = 0;
+
+  data.seasons.forEach(season => {
+    (season.matches || []).forEach(match => {
+      const text = String(match.report || "").toLowerCase();
+      if(!text) return;
+
+      keywordsPositive.forEach(k => { if(text.includes(k)) positive++; });
+      keywordsChaos.forEach(k => { if(text.includes(k)) chaos++; });
+      keywordsComeback.forEach(k => { if(text.includes(k)) comebackWords++; });
+    });
+  });
+
+  return { positive, chaos, comebackWords };
+}
+
+function buildPlayerBio(playerIndex){
+  const rawStats = calculateRawAllTimeStats();
+  const streaks = computeStreakStats();
+  const completed = getCompletedMatchesInStoredOrder();
+  const comebacks = computeComebackMatchWinCounts().comebackWins;
+  const reportSignal = extractReportSignal(playerIndex);
+
+  const me = rawStats[playerIndex];
+  const opp = rawStats[1 - playerIndex];
+  const totalCompleted = me.completedMatches + opp.completedMatches;
+  const winRate = totalCompleted ? me.completedMatches / totalCompleted : 0.5;
+  const comebackRate = me.completedMatches ? comebacks[playerIndex] / me.completedMatches : 0;
+
+  const currentStreak = playerIndex === 0 ? streaks.alexCurrent : streaks.georgeCurrent;
+  const longestStreak = playerIndex === 0 ? streaks.alexLongest : streaks.georgeLongest;
+
+  let opening = "";
+  if(totalCompleted < 4){
+    opening = `${me.name} is still in the data-gathering stage, so the profile is tentative.`;
+  } else if(winRate >= 0.6){
+    opening = `${me.name} currently looks like the stronger long-run performer in this rivalry.`;
+  } else if(winRate <= 0.4){
+    opening = `${me.name} has been the underdog so far, but the rivalry still has room to swing.`;
+  } else {
+    opening = `${me.name} is in a tightly balanced rivalry with very little separating the two players.`;
+  }
+
+  let style = "";
+  if(me.gameDiff >= 8 || me.pointsDiff >= 40){
+    style = `The underlying numbers suggest a more controlling style, with a habit of building score pressure rather than just nicking the odd result.`;
+  } else if(me.gameDiff <= -8 || me.pointsDiff <= -40){
+    style = `Results have been harder won, and the profile suggests someone who has had to scrap for territory rather than consistently dictating matches.`;
+  } else {
+    style = `The profile is relatively even, suggesting a player who tends to live in competitive matches rather than blowing opponents away.`;
+  }
+
+  let clutch = "";
+  if(comebackRate >= 0.3){
+    clutch = `There is a noticeable comeback streak in the data too, which points to resilience when matches start going sideways.`;
+  } else if(me.completedMatches >= 3 && comebackRate === 0){
+    clutch = `Most wins have come from getting on top early rather than mounting dramatic recoveries.`;
+  } else {
+    clutch = `The comeback picture is mixed so far, with not quite enough evidence to call it a defining trait.`;
+  }
+
+  let momentum = "";
+  if(currentStreak >= 3){
+    momentum = `Right now the momentum is very much with ${me.name.toLowerCase()}, who comes in on a ${currentStreak}-match winning run.`;
+  } else if(longestStreak >= 4){
+    momentum = `${me.name} has shown a capacity to run hot, with a longest winning streak of ${longestStreak}.`;
+  } else {
+    momentum = `${me.name}'s pattern so far has been more stop-start than dominant streak machine.`;
+  }
+
+  let flavour = "";
+  if(reportSignal.chaos > reportSignal.positive + 2){
+    flavour = `Match reports around this rivalry lean a bit chaotic, which suits a player comfortable in scrappy momentum swings.`;
+  } else if(reportSignal.positive > reportSignal.chaos + 2){
+    flavour = `The language in the reports hints at a cleaner, more controlled version of squash when ${me.name.toLowerCase()} is going well.`;
+  } else if(reportSignal.comebackWords >= 2){
+    flavour = `The reports also keep circling back to recovery and fightback themes, which fits a stubborn competitive profile.`;
+  } else {
+    flavour = `At this stage the reports add colour, but the hard numbers are still doing most of the talking.`;
+  }
+
+  return `${opening} ${style} ${clutch} ${momentum} ${flavour}`;
+}
+
 /* ---------- RENDER ---------- */
 function escapeHtml(str){
   return String(str)
@@ -1161,9 +1319,11 @@ function escapeHtml(str){
 function renderAll(){
   renderSeasonScore();
   renderPredictions();
+  renderBios();
   renderCurrentSeasonLeaderboard();
   renderAllTimeLeaderboard();
   renderAddMatchForm();
+  updateFormModeUi();
   renderHistory();
 
   if(currentTab === "analyticsTab"){
@@ -1237,6 +1397,11 @@ function renderPredictions(){
   document.getElementById("matchPredictionSub").textContent = matchSub;
   document.getElementById("seasonPredictionMain").textContent = seasonMain;
   document.getElementById("seasonPredictionSub").textContent = seasonSub;
+}
+
+function renderBios(){
+  document.getElementById("alexBio").textContent = buildPlayerBio(0);
+  document.getElementById("georgeBio").textContent = buildPlayerBio(1);
 }
 
 function renderCurrentSeasonLeaderboard(){
@@ -1316,6 +1481,9 @@ function renderHistory(){
         ? `<span class="badge badge-wild">Wildcard</span>`
         : "";
 
+      const editingThis = currentEdit && currentEdit.seasonIndex === si && currentEdit.matchIndex === mi;
+      const editBadge = editingThis ? `<span class="badge badge-edit">Editing</span>` : "";
+
       const winnerText = (m.completed && (m.winner === 0 || m.winner === 1))
         ? data.players[m.winner]
         : "N/A";
@@ -1333,11 +1501,12 @@ function renderHistory(){
       html += `<div class="match-card">
         <div class="row">
           <div style="flex:1; min-width:0;">
-            <b>Match ${mi+1}</b> ${statusBadge} ${wildcardBadge}
+            <b>Match ${mi+1}</b> ${statusBadge} ${wildcardBadge} ${editBadge}
             <div class="muted" style="margin-top:4px;">Winner: ${winnerText} • ${when} • Games won: Alex ${gw[0]} - ${gw[1]} George • ${seasonWinImpact}</div>
             ${extras.length ? `<div class="meta-list">${extras.map(x => `<div>${x}</div>`).join("")}</div>` : ""}
           </div>
           <div>
+            <button class="small" onclick="startEditMatch(${si}, ${mi})">Edit</button>
             <button class="small danger" onclick="deleteMatch(${si}, ${mi})">Delete</button>
           </div>
         </div>
@@ -1455,11 +1624,23 @@ function renderAnalyticsTab(){
   renderCharts();
 }
 
-/* ---------- INPUTS ---------- */
+/* ---------- FORM / EDIT MODE ---------- */
 function renderAddMatchForm(){
-  const s = getCurrentSeason();
-  const wildcardAvailable = s && !s.wildcardUsed;
-  const wildcardHolderName = s ? data.players[s.wildcardHolder] : "N/A";
+  const editingMatch = currentEdit ? getMatchBySeasonAndIndex(currentEdit.seasonIndex, currentEdit.matchIndex) : null;
+  const currentSeason = getCurrentSeason();
+
+  let wildcardHolderName = currentSeason ? data.players[currentSeason.wildcardHolder] : "N/A";
+  let wildcardAvailable = currentSeason && !currentSeason.wildcardUsed;
+  let wildcardHelp = `If this match is won, the winner gets <b>2 season wins</b>. If unresolved, its points count <b>double</b> for unresolved-match tiebreaks.`;
+
+  if(currentEdit){
+    const editSeason = data.seasons?.[currentEdit.seasonIndex];
+    if(editSeason){
+      wildcardHolderName = data.players[editSeason.wildcardHolder];
+      wildcardAvailable = !seasonHasOtherWildcard(currentEdit.seasonIndex, currentEdit.matchIndex) || !!editingMatch?.wildcardActive;
+    }
+    wildcardHelp = `For this season, the wildcard belongs to <b>${wildcardHolderName}</b>. You can only have one wildcarded match in a season.`;
+  }
 
   let html = "";
 
@@ -1503,7 +1684,7 @@ function renderAddMatchForm(){
   </div>`;
 
   html += `<div style="margin-top:12px;" class="muted">
-    Wildcard holder this season: <b>${wildcardHolderName}</b>
+    Wildcard holder for this ${currentEdit ? "season" : "season"}: <b>${wildcardHolderName}</b>
   </div>`;
 
   if(wildcardAvailable){
@@ -1511,9 +1692,9 @@ function renderAddMatchForm(){
       <input id="wildcardActive" type="checkbox" style="width:auto; margin-right:8px;">
       Activate wildcard for this match
     </label>
-    <div class="smallnote">If this match is won, the winner gets <b>2 season wins</b>. If unresolved, its points count <b>double</b> for unresolved-match tiebreaks.</div>`;
+    <div class="smallnote">${wildcardHelp}</div>`;
   } else {
-    html += `<div class="smallnote">Wildcard already used this season.</div>`;
+    html += `<div class="smallnote">Wildcard is already used on another match in this season.</div>`;
   }
 
   html += `<div style="margin-top:12px;">
@@ -1522,7 +1703,60 @@ function renderAddMatchForm(){
   </div>`;
 
   document.getElementById("inputs").innerHTML = html;
-  setDateTimeToNow();
+
+  if(currentEdit && editingMatch){
+    populateFormForEditing(editingMatch, currentEdit.seasonIndex, currentEdit.matchIndex);
+  } else {
+    setDateTimeToNow();
+  }
+}
+
+function populateFormForEditing(match){
+  clearMatchEntryFormFields();
+
+  (match.games || []).forEach((g, i) => {
+    const aEl = document.getElementById("a"+i);
+    const bEl = document.getElementById("b"+i);
+    if(aEl && typeof g.a === "number") aEl.value = g.a;
+    if(bEl && typeof g.g === "number") bEl.value = g.g;
+  });
+
+  const dateEl = document.getElementById("matchDate");
+  const timeEl = document.getElementById("matchTime");
+  const reportEl = document.getElementById("matchReport");
+  const locationEl = document.getElementById("matchLocation");
+  const courtEl = document.getElementById("matchCourt");
+  const pintsEl = document.getElementById("matchPints");
+  const wildEl = document.getElementById("wildcardActive");
+
+  if(dateEl) dateEl.value = match.date || "";
+  if(timeEl) timeEl.value = match.time || "";
+  if(reportEl) reportEl.value = match.report || "";
+  if(locationEl) locationEl.value = match.location || "";
+  if(courtEl) courtEl.value = match.court || "";
+  if(pintsEl) pintsEl.value = (match.pints === null || match.pints === undefined) ? "" : match.pints;
+  if(wildEl) wildEl.checked = !!match.wildcardActive;
+}
+
+function updateFormModeUi(){
+  const formTitle = document.getElementById("formTitle");
+  const addBtn = document.getElementById("addMatchBtn");
+  const cancelBtn = document.getElementById("cancelEditBtn");
+  const banner = document.getElementById("editBanner");
+
+  if(currentEdit){
+    formTitle.textContent = "Edit Match";
+    addBtn.textContent = "Save Changes";
+    cancelBtn.style.display = "inline-block";
+    banner.style.display = "block";
+    banner.innerHTML = `You are editing <b>Season ${currentEdit.seasonIndex + 1} – Match ${currentEdit.matchIndex + 1}</b>. Save to overwrite that match, or cancel to leave it unchanged.`;
+  } else {
+    formTitle.textContent = "Add Match";
+    addBtn.textContent = "Add Match";
+    cancelBtn.style.display = "none";
+    banner.style.display = "none";
+    banner.innerHTML = "";
+  }
 }
 
 /* ---------- TABS ---------- */
@@ -1547,64 +1781,115 @@ function switchTab(tabId){
 }
 
 /* ---------- ACTIONS ---------- */
-window.addMatch = async function(){
-  try {
-    let games = [];
-    for(let i=0;i<5;i++){
-      const a = parseInt(document.getElementById("a"+i).value);
-      const b = parseInt(document.getElementById("b"+i).value);
-      if(!isNaN(a) && !isNaN(b)){
-        games.push({ a: a, g: b });
-      }
+window.startEditMatch = function(seasonIndex, matchIndex){
+  const match = getMatchBySeasonAndIndex(seasonIndex, matchIndex);
+  if(!match) return alert("Could not find that match.");
+
+  currentEdit = { seasonIndex, matchIndex };
+  switchTab("homeTab");
+  renderAddMatchForm();
+  updateFormModeUi();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+window.cancelEdit = function(){
+  resetMatchEntryForm();
+};
+
+async function saveMatchFromForm(){
+  let games = [];
+  for(let i=0;i<5;i++){
+    const a = parseInt(document.getElementById("a"+i).value);
+    const b = parseInt(document.getElementById("b"+i).value);
+    if(!isNaN(a) && !isNaN(b)){
+      games.push({ a: a, g: b });
     }
+  }
 
-    if(games.length === 0) return alert("Enter at least one game score.");
+  if(games.length === 0){
+    alert("Enter at least one game score.");
+    return;
+  }
 
-    const date = document.getElementById("matchDate").value;
-    const time = document.getElementById("matchTime").value;
-    const report = document.getElementById("matchReport").value.trim();
-    const location = document.getElementById("matchLocation").value.trim();
-    const court = document.getElementById("matchCourt").value.trim();
+  const date = document.getElementById("matchDate").value;
+  const time = document.getElementById("matchTime").value;
+  const report = document.getElementById("matchReport").value.trim();
+  const location = document.getElementById("matchLocation").value.trim();
+  const court = document.getElementById("matchCourt").value.trim();
 
-    const pintsRaw = document.getElementById("matchPints").value;
-    const pintsParsed = parseFloat(pintsRaw);
-    const pints = pintsRaw === "" || isNaN(pintsParsed) ? null : pintsParsed;
+  const pintsRaw = document.getElementById("matchPints").value;
+  const pintsParsed = parseFloat(pintsRaw);
+  const pints = pintsRaw === "" || isNaN(pintsParsed) ? null : pintsParsed;
 
+  let wildcardActive = false;
+  const wildcardCheckbox = document.getElementById("wildcardActive");
+
+  if(currentEdit){
+    if(wildcardCheckbox && wildcardCheckbox.checked){
+      if(seasonHasOtherWildcard(currentEdit.seasonIndex, currentEdit.matchIndex)){
+        alert("That season already has a different wildcarded match. Uncheck wildcard or edit the other match first.");
+        return;
+      }
+      wildcardActive = true;
+    }
+  } else {
     const currentSeason = getCurrentSeason();
     const wildcardAvailable = currentSeason && !currentSeason.wildcardUsed;
-    const wildcardCheckbox = document.getElementById("wildcardActive");
-    const wildcardActive = !!(wildcardAvailable && wildcardCheckbox && wildcardCheckbox.checked);
-
-    const outcome = computeMatchOutcome(games);
-
-    const match = {
-      games,
-      date,
-      time,
-      report,
-      location,
-      court,
-      pints,
-      completed: outcome.completed,
-      winner: outcome.winner,
-      gameWins: outcome.gameWins,
-      comebackWin: outcome.comebackWin,
-      wildcardActive: wildcardActive
-    };
-
-    const all = flattenMatchesInStoredOrder();
-    all.push(match);
-    rebuildSeasonsFromMatches(all);
-
-    await saveData();
-    resetMatchEntryForm();
-    await loadData();
-    switchTab("homeTab");
-  } catch (e){
-    console.error(e);
-    alert("Error adding match. Check Console.");
+    wildcardActive = !!(wildcardAvailable && wildcardCheckbox && wildcardCheckbox.checked);
   }
-};
+
+  const outcome = computeMatchOutcome(games);
+
+  const match = {
+    games,
+    date,
+    time,
+    report,
+    location,
+    court,
+    pints,
+    completed: outcome.completed,
+    winner: outcome.winner,
+    gameWins: outcome.gameWins,
+    comebackWin: outcome.comebackWin,
+    wildcardActive: wildcardActive
+  };
+
+  const all = flattenMatchesInStoredOrder();
+
+  if(currentEdit){
+    let flatIndex = 0;
+    let targetIndex = -1;
+
+    for(let si = 0; si < data.seasons.length; si++){
+      const season = data.seasons[si];
+      for(let mi = 0; mi < (season.matches || []).length; mi++){
+        if(si === currentEdit.seasonIndex && mi === currentEdit.matchIndex){
+          targetIndex = flatIndex;
+          break;
+        }
+        flatIndex++;
+      }
+      if(targetIndex !== -1) break;
+    }
+
+    if(targetIndex === -1){
+      alert("Could not locate the match to update.");
+      return;
+    }
+
+    all[targetIndex] = match;
+  } else {
+    all.push(match);
+  }
+
+  rebuildSeasonsFromMatches(all);
+  await saveData();
+
+  currentEdit = null;
+  await loadData();
+  switchTab("homeTab");
+}
 
 window.deleteMatch = async function(seasonIndex, matchIndex){
   try {
@@ -1618,6 +1903,10 @@ window.deleteMatch = async function(seasonIndex, matchIndex){
       });
     });
 
+    if(currentEdit && currentEdit.seasonIndex === seasonIndex && currentEdit.matchIndex === matchIndex){
+      currentEdit = null;
+    }
+
     rebuildSeasonsFromMatches(all);
     await saveData();
     await loadData();
@@ -1627,8 +1916,17 @@ window.deleteMatch = async function(seasonIndex, matchIndex){
   }
 };
 
-document.getElementById("addMatchBtn").addEventListener("click", () => {
-  window.addMatch();
+document.getElementById("addMatchBtn").addEventListener("click", async () => {
+  try {
+    await saveMatchFromForm();
+  } catch (e){
+    console.error(e);
+    alert("Error saving match. Check Console.");
+  }
+});
+
+document.getElementById("cancelEditBtn").addEventListener("click", () => {
+  window.cancelEdit();
 });
 
 document.querySelectorAll(".tab-btn").forEach(btn => {
