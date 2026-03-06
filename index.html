@@ -8,7 +8,7 @@
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#f4f6f8; padding:20px; }
 .card { background:white; padding:15px; margin-bottom:15px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,0.08); }
-input, textarea { width: 70px; margin:3px; }
+input, textarea, select { width: 70px; margin:3px; }
 textarea { width: 100%; height:50px; }
 button { padding:8px 12px; border-radius:8px; border:none; background:black; color:white; margin-top:5px; cursor:pointer; }
 button.danger { background:#b00020; }
@@ -21,11 +21,15 @@ th,td { padding:6px; text-align:center; border-bottom:1px solid #eee; }
 .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:8px; }
 .badge-ok { background:#e9f7ee; color:#0b6b0b; }
 .badge-nr { background:#fdecec; color:#b00020; }
+.badge-wild { background:#fff5e6; color:#9a5b00; }
+.badge-draw { background:#eef2ff; color:#3346b0; }
 #status { margin: 10px 0 15px 0; }
 .status-ok { color:#0b6b0b; }
 .status-err { color:#b00020; white-space: pre-wrap; }
 .smallnote { font-size:12px; color:#666; margin-top:6px; }
 hr { border:none; border-top:1px solid #eee; margin:12px 0; }
+.section-title { margin-bottom:6px; }
+.highlight { font-size:18px; font-weight:700; }
 </style>
 </head>
 <body>
@@ -34,15 +38,22 @@ hr { border:none; border-top:1px solid #eee; margin:12px 0; }
 <div id="status" class="muted">Loading…</div>
 
 <div class="card">
-  <h2>Leaderboard</h2>
-  <div class="smallnote">Ordered by <b>Seasons Won</b>. Other columns use <b>completed</b> matches only.</div>
-  <table id="leaderboard"></table>
+  <h2>Current Season Leaderboard</h2>
+  <div class="smallnote">Ranked by current season match wins. Overall points difference includes unresolved matches. Unresolved-match point difference is the tiebreak if nobody reaches 5 wins by match 10.</div>
+  <table id="seasonLeaderboard"></table>
 </div>
 
 <div class="card">
   <h2>Current Season</h2>
-  <div id="seasonScore"></div>
-  <div class="muted" id="seasonMeta"></div>
+  <div id="seasonScore" class="highlight"></div>
+  <div id="seasonMeta" class="muted"></div>
+  <div id="wildcardMeta" class="muted" style="margin-top:6px;"></div>
+</div>
+
+<div class="card">
+  <h2>All-Time Leaderboard</h2>
+  <div class="smallnote">Ordered by <b>Seasons Won</b>. Drawn seasons count as <b>0.5</b> each.</div>
+  <table id="leaderboard"></table>
 </div>
 
 <div class="card">
@@ -54,7 +65,7 @@ hr { border:none; border-top:1px solid #eee; margin:12px 0; }
 
 <div class="card">
   <h2>Match History</h2>
-  <div class="muted">Tip: Deleting a match automatically recalculates season scores and winners.</div>
+  <div class="muted">Tip: Deleting a match automatically recalculates seasons, wildcard holders, and all stats.</div>
   <div id="history"></div>
 </div>
 
@@ -72,7 +83,7 @@ hr { border:none; border-top:1px solid #eee; margin:12px 0; }
       <canvas id="comebackMatchChart"></canvas>
     </div>
     <div>
-      <div class="smallnote"><b>Comeback Seasons Won (count)</b>: number of seasons won where the winner trailed by 1+ matches at some point.</div>
+      <div class="smallnote"><b>Comeback Seasons Won (count)</b>: number of seasons won where the winner trailed on season match wins at some point.</div>
       <canvas id="comebackSeasonChart"></canvas>
     </div>
   </div>
@@ -114,6 +125,10 @@ function setStatusErr(msg){
 
 function pad2(n){ return String(n).padStart(2, "0"); }
 
+function formatNumberMaybeHalf(n){
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 function getWeekdayShortFromISODate(isoDate){
   if(!isoDate) return "";
   const d = new Date(isoDate + "T00:00:00");
@@ -151,22 +166,46 @@ function resetMatchEntryForm(){
   }
   const report = document.getElementById("matchReport");
   if(report) report.value = "";
+
+  const wild = document.getElementById("wildcardActive");
+  if(wild) wild.checked = false;
+
   setDateTimeToNow();
+}
+
+function ensureBaseDataShape(raw){
+  const out = raw || {};
+  if(!Array.isArray(out.players)) out.players = ["Alex","George"];
+  if(typeof out.firstWildcardHolder !== "number" || ![0,1].includes(out.firstWildcardHolder)){
+    out.firstWildcardHolder = Math.random() < 0.5 ? 0 : 1;
+  }
+  if(!Array.isArray(out.seasons)) out.seasons = [];
+  return out;
 }
 
 async function loadData(){
   try {
     setStatusOk("Loading…");
     const snap = await getDoc(doc(db,"squash","main"));
+
     if(snap.exists()){
-      data = snap.data();
+      data = ensureBaseDataShape(snap.data());
     } else {
-      data = {
+      data = ensureBaseDataShape({
         players:["Alex","George"],
-        seasons:[{matches:[],wins:[0,0],winner:null}]
-      };
+        seasons:[]
+      });
+      rebuildSeasonsFromMatches([]);
       await saveData();
     }
+
+    // Rebuild using latest rules every load
+    const allMatches = flattenMatchesInStoredOrderFromExistingData(data);
+    rebuildSeasonsFromMatches(allMatches);
+
+    // Save rebuilt structure so Firestore stays aligned
+    await saveData();
+
     renderAll();
     setStatusOk("Loaded ✓");
   } catch (e){
@@ -187,12 +226,15 @@ function flattenMatchesInStoredOrder(){
   return all;
 }
 
+function flattenMatchesInStoredOrderFromExistingData(existingData){
+  const all = [];
+  (existingData.seasons || []).forEach(season => {
+    (season.matches || []).forEach(match => all.push(match));
+  });
+  return all;
+}
+
 /* ---------- RULE LOGIC ---------- */
-/**
- * Valid squash game score:
- * - someone reaches 15+ AND
- * - wins by 2 clear points
- */
 function getValidGameWinner(a, g){
   if(typeof a !== "number" || typeof g !== "number") return null;
   const max = Math.max(a, g);
@@ -202,12 +244,6 @@ function getValidGameWinner(a, g){
   return (a > g) ? 0 : 1; // 0=Alex, 1=George
 }
 
-/**
- * Determine match outcome from entered games:
- * - Count only VALID games
- * - Match completed only when someone reaches 3 valid game wins
- * - comebackWin: winner trailed by 1+ games at some point
- */
 function computeMatchOutcome(games){
   let gameWins = [0,0];
   let alexTrailed = false;
@@ -235,25 +271,119 @@ function computeMatchOutcome(games){
   return { completed, winner, gameWins, comebackWin };
 }
 
+function getRawMatchPointDiff(match){
+  let diff = 0;
+  (match.games || []).forEach(g => {
+    if(typeof g.a === "number" && typeof g.g === "number"){
+      diff += (g.a - g.g);
+    }
+  });
+  return diff;
+}
+
+function getWeightedUnresolvedPointDiff(match){
+  if(!match || match.completed) return 0;
+  const raw = getRawMatchPointDiff(match);
+  return raw * (match.wildcardActive ? 2 : 1);
+}
+
+function getSeasonOverallPointDiff(season){
+  let diff = 0;
+  (season.matches || []).forEach(m => {
+    if(!m) return;
+    if(m.completed){
+      diff += getRawMatchPointDiff(m);
+    } else {
+      diff += getWeightedUnresolvedPointDiff(m);
+    }
+  });
+  return diff;
+}
+
+function getSeasonUnresolvedPointDiff(season){
+  let diff = 0;
+  (season.matches || []).forEach(m => {
+    diff += getWeightedUnresolvedPointDiff(m);
+  });
+  return diff;
+}
+
+function createEmptySeason(seasonIndex){
+  const holder = ((data.firstWildcardHolder + seasonIndex) % 2);
+  return {
+    matches: [],
+    wins: [0,0],               // season match wins (wildcard win can add 2)
+    winner: null,              // 0,1 or null
+    isDraw: false,
+    finished: false,
+    wildcardHolder: holder,    // 0 or 1
+    wildcardUsed: false
+  };
+}
+
 /* ---------- SEASON REBUILD ---------- */
-/**
- * Only COMPLETED matches count toward season wins.
- */
 function rebuildSeasonsFromMatches(allMatches){
   const seasons = [];
-  let current = { matches: [], wins: [0,0], winner: null };
+  let seasonIndex = 0;
+  let current = createEmptySeason(seasonIndex);
 
-  for(const match of allMatches){
+  for(const originalMatch of allMatches){
+    const match = {
+      games: Array.isArray(originalMatch.games) ? originalMatch.games : [],
+      date: originalMatch.date || "",
+      time: originalMatch.time || "",
+      report: originalMatch.report || "",
+      completed: !!originalMatch.completed,
+      winner: (originalMatch.winner === 0 || originalMatch.winner === 1) ? originalMatch.winner : null,
+      gameWins: Array.isArray(originalMatch.gameWins) ? originalMatch.gameWins : [0,0],
+      comebackWin: !!originalMatch.comebackWin,
+      wildcardActive: !!originalMatch.wildcardActive
+    };
+
     current.matches.push(match);
 
-    if(match && match.completed && (match.winner === 0 || match.winner === 1)){
-      current.wins[match.winner]++;
+    if(match.wildcardActive){
+      current.wildcardUsed = true;
+    }
 
-      if(current.wins[match.winner] >= 5 && current.winner === null){
-        current.winner = match.winner;
-        seasons.push(current);
-        current = { matches: [], wins: [0,0], winner: null };
+    if(match.completed && (match.winner === 0 || match.winner === 1)){
+      const award = match.wildcardActive ? 2 : 1;
+      current.wins[match.winner] += award;
+    }
+
+    // Immediate season win: first to 5 season match wins
+    if(current.wins[0] >= 5 || current.wins[1] >= 5){
+      current.finished = true;
+      current.winner = current.wins[0] >= 5 ? 0 : 1;
+      seasons.push(current);
+      seasonIndex++;
+      current = createEmptySeason(seasonIndex);
+      continue;
+    }
+
+    // Hard stop after 10 matches
+    if(current.matches.length >= 10){
+      current.finished = true;
+
+      if(current.wins[0] > current.wins[1]){
+        current.winner = 0;
+      } else if(current.wins[1] > current.wins[0]){
+        current.winner = 1;
+      } else {
+        const unresolvedDiff = getSeasonUnresolvedPointDiff(current);
+        if(unresolvedDiff > 0){
+          current.winner = 0;
+        } else if(unresolvedDiff < 0){
+          current.winner = 1;
+        } else {
+          current.winner = null;
+          current.isDraw = true;
+        }
       }
+
+      seasons.push(current);
+      seasonIndex++;
+      current = createEmptySeason(seasonIndex);
     }
   }
 
@@ -266,38 +396,94 @@ function getCurrentSeason(){
 }
 
 /* ---------- STATS ---------- */
-function calculateStats(){
-  let stats=[
-    {name:"Alex",seasons:0,matches:0,gamesWon:0,gamesLost:0,pointsDiff:0},
-    {name:"George",seasons:0,matches:0,gamesWon:0,gamesLost:0,pointsDiff:0}
+function calculateAllTimeStats(){
+  let stats = [
+    {name:"Alex", seasons:0, completedMatches:0, gamesWon:0, gamesLost:0, gameDiff:0, pointsDiff:0},
+    {name:"George", seasons:0, completedMatches:0, gamesWon:0, gamesLost:0, gameDiff:0, pointsDiff:0}
   ];
 
-  data.seasons.forEach(s=>{
-    if(s.winner!==null) stats[s.winner].seasons++;
+  data.seasons.forEach(s => {
+    if(s.finished){
+      if(s.isDraw){
+        stats[0].seasons += 0.5;
+        stats[1].seasons += 0.5;
+      } else if(s.winner === 0 || s.winner === 1){
+        stats[s.winner].seasons += 1;
+      }
+    }
 
-    (s.matches || []).forEach(m=>{
-      if(!m || !m.completed) return;
-      if(m.winner === 0 || m.winner === 1) stats[m.winner].matches++;
+    (s.matches || []).forEach(m => {
+      if(!m) return;
 
-      (m.games || []).forEach(g=>{
-        const w = getValidGameWinner(g.a, g.g);
-        if(w === null) return;
+      if(m.completed && (m.winner === 0 || m.winner === 1)){
+        stats[m.winner].completedMatches += 1;
+      }
 
-        const a = g.a;
-        const b = g.g;
+      if(m.completed){
+        (m.games || []).forEach(g => {
+          const w = getValidGameWinner(g.a, g.g);
+          if(w === null) return;
 
-        stats[0].gamesWon += a>b ? 1 : 0;
-        stats[1].gamesWon += b>a ? 1 : 0;
-        stats[0].gamesLost += a<b ? 1 : 0;
-        stats[1].gamesLost += b<a ? 1 : 0;
+          if(g.a > g.g){
+            stats[0].gamesWon += 1;
+            stats[1].gamesLost += 1;
+          } else if(g.g > g.a){
+            stats[1].gamesWon += 1;
+            stats[0].gamesLost += 1;
+          }
+        });
+      }
 
-        stats[0].pointsDiff += a - b;
-        stats[1].pointsDiff += b - a;
-      });
+      if(m.completed){
+        stats[0].pointsDiff += getRawMatchPointDiff(m);
+        stats[1].pointsDiff -= getRawMatchPointDiff(m);
+      } else {
+        const weighted = getWeightedUnresolvedPointDiff(m);
+        stats[0].pointsDiff += weighted;
+        stats[1].pointsDiff -= weighted;
+      }
     });
   });
 
-  return stats.sort((a,b)=>b.seasons-a.seasons);
+  stats.forEach(s => {
+    s.gameDiff = s.gamesWon - s.gamesLost;
+  });
+
+  return stats.sort((a,b) => {
+    if(b.seasons !== a.seasons) return b.seasons - a.seasons;
+    if(b.completedMatches !== a.completedMatches) return b.completedMatches - a.completedMatches;
+    if(b.gameDiff !== a.gameDiff) return b.gameDiff - a.gameDiff;
+    return b.pointsDiff - a.pointsDiff;
+  });
+}
+
+function calculateCurrentSeasonStats(){
+  const s = getCurrentSeason();
+
+  let rows = [
+    {
+      playerIndex: 0,
+      name: "Alex",
+      matchWins: s.wins?.[0] ?? 0,
+      overallPointsDiff: getSeasonOverallPointDiff(s),
+      unresolvedPointsDiff: getSeasonUnresolvedPointDiff(s)
+    },
+    {
+      playerIndex: 1,
+      name: "George",
+      matchWins: s.wins?.[1] ?? 0,
+      overallPointsDiff: -getSeasonOverallPointDiff(s),
+      unresolvedPointsDiff: -getSeasonUnresolvedPointDiff(s)
+    }
+  ];
+
+  rows.sort((a,b) => {
+    if(b.matchWins !== a.matchWins) return b.matchWins - a.matchWins;
+    if(b.unresolvedPointsDiff !== a.unresolvedPointsDiff) return b.unresolvedPointsDiff - a.unresolvedPointsDiff;
+    return b.overallPointsDiff - a.overallPointsDiff;
+  });
+
+  return rows;
 }
 
 /* ---------- ANALYTICS ---------- */
@@ -328,10 +514,6 @@ function computeWeekdayWinRatesPercent(){
   return { labels, alexPct, georgePct };
 }
 
-/**
- * Comeback Match Wins (count):
- * number of completed matches won where winner trailed by 1+ games at some point.
- */
 function computeComebackMatchWinCounts(){
   const comebackWins = [0,0];
 
@@ -346,14 +528,11 @@ function computeComebackMatchWinCounts(){
   return { comebackWins };
 }
 
-/**
- * Comeback Seasons Won (count):
- * number of seasons won where the season winner trailed by 1+ matches at some point.
- */
 function computeComebackSeasonWinCounts(){
   let comebackSeasons = [0,0];
 
   data.seasons.forEach(season => {
+    if(!season.finished || season.isDraw) return;
     if(season.winner !== 0 && season.winner !== 1) return;
 
     const w = season.winner;
@@ -364,7 +543,8 @@ function computeComebackSeasonWinCounts(){
       if(!m || !m.completed) return;
       if(m.winner !== 0 && m.winner !== 1) return;
 
-      score[m.winner]++;
+      const award = m.wildcardActive ? 2 : 1;
+      score[m.winner] += award;
 
       if(score[w] < score[1-w]) winnerTrailed = true;
     });
@@ -386,67 +566,125 @@ function escapeHtml(str){
 }
 
 function renderAll(){
-  renderLeaderboard();
+  renderCurrentSeasonLeaderboard();
   renderSeasonScore();
+  renderAllTimeLeaderboard();
+  renderAddMatchForm();
   renderHistory();
   renderCharts();
 }
 
-function renderLeaderboard(){
-  const stats = calculateStats();
-  let html="<tr><th>Player</th><th>Seasons</th><th>Matches</th><th>Games W</th><th>Games L</th><th>Points Diff</th></tr>";
-  stats.forEach(p=>{
-    html+=`<tr>
+function renderCurrentSeasonLeaderboard(){
+  const stats = calculateCurrentSeasonStats();
+  let html = "<tr><th>Player</th><th>Match Wins</th><th>Overall Pts Diff</th><th>Unresolved Pts Diff</th></tr>";
+
+  stats.forEach(p => {
+    html += `<tr>
       <td>${p.name}</td>
-      <td>${p.seasons}</td>
-      <td>${p.matches}</td>
-      <td>${p.gamesWon}</td>
-      <td>${p.gamesLost}</td>
-      <td>${p.pointsDiff}</td>
+      <td>${p.matchWins}</td>
+      <td>${p.overallPointsDiff > 0 ? "+" : ""}${p.overallPointsDiff}</td>
+      <td>${p.unresolvedPointsDiff > 0 ? "+" : ""}${p.unresolvedPointsDiff}</td>
     </tr>`;
   });
-  document.getElementById("leaderboard").innerHTML=html;
+
+  document.getElementById("seasonLeaderboard").innerHTML = html;
 }
 
 function renderSeasonScore(){
   const s = getCurrentSeason();
+  const matchesPlayed = (s.matches || []).length;
+  const holderName = data.players[s.wildcardHolder];
+  const wildcardStatus = s.wildcardUsed ? "Used" : "Available";
+
   document.getElementById("seasonScore").innerText =
     "Alex " + (s.wins?.[0] ?? 0) + " - " + (s.wins?.[1] ?? 0) + " George";
+
   document.getElementById("seasonMeta").innerText =
-    "Season " + data.seasons.length + " (current)";
+    `Season ${data.seasons.length} • Matches played: ${matchesPlayed}/10 • First to 5 season wins ends the season`;
+
+  document.getElementById("wildcardMeta").innerText =
+    `Wildcard holder: ${holderName} • Status: ${wildcardStatus}`;
+}
+
+function renderAllTimeLeaderboard(){
+  const stats = calculateAllTimeStats();
+  let html="<tr><th>Player</th><th>Seasons</th><th>Completed Matches</th><th>Game Diff</th><th>Overall Pts Diff</th></tr>";
+
+  stats.forEach(p => {
+    html += `<tr>
+      <td>${p.name}</td>
+      <td>${formatNumberMaybeHalf(p.seasons)}</td>
+      <td>${p.completedMatches}</td>
+      <td>${p.gameDiff > 0 ? "+" : ""}${p.gameDiff}</td>
+      <td>${p.pointsDiff > 0 ? "+" : ""}${p.pointsDiff}</td>
+    </tr>`;
+  });
+
+  document.getElementById("leaderboard").innerHTML = html;
 }
 
 function renderHistory(){
-  let html="";
+  let html = "";
 
-  data.seasons.forEach((s, si)=>{
-    html += `<div style="margin-top:10px;"><b>Season ${si+1}</b></div>`;
+  data.seasons.forEach((s, si) => {
+    let title = `Season ${si+1}`;
+    if(!s.finished){
+      title += " (current)";
+    }
+
+    let resultText = "In progress";
+    if(s.finished && s.isDraw){
+      resultText = "Draw";
+    } else if(s.finished && (s.winner === 0 || s.winner === 1)){
+      resultText = `${data.players[s.winner]} won`;
+    }
+
+    const overallPD = getSeasonOverallPointDiff(s);
+    const unresolvedPD = getSeasonUnresolvedPointDiff(s);
+
+    html += `<div style="margin-top:10px;">
+      <b>${title}</b>
+      <div class="muted">
+        Result: ${resultText} • Season wins: Alex ${s.wins?.[0] ?? 0} - ${s.wins?.[1] ?? 0} George •
+        Overall pts diff: ${overallPD > 0 ? "+" : ""}${overallPD} •
+        Unresolved pts diff: ${unresolvedPD > 0 ? "+" : ""}${unresolvedPD} •
+        Wildcard holder: ${data.players[s.wildcardHolder]} •
+        Wildcard used: ${s.wildcardUsed ? "Yes" : "No"}
+      </div>
+    </div>`;
 
     if(!s.matches || s.matches.length === 0){
       html += `<div class="muted">No matches logged yet.</div>`;
       return;
     }
 
-    s.matches.forEach((m, mi)=>{
+    s.matches.forEach((m, mi) => {
       const when = formatDateTimeNice(m.date || "", m.time || "");
       const report = m.report || "";
       const gamesStr = (m.games || []).map(g => `${g.a}-${g.g}`).join(", ");
 
-      const badge = m.completed
+      const statusBadge = m.completed
         ? `<span class="badge badge-ok">Completed</span>`
         : `<span class="badge badge-nr">No Result</span>`;
+
+      const wildcardBadge = m.wildcardActive
+        ? `<span class="badge badge-wild">Wildcard</span>`
+        : "";
 
       const winnerText = (m.completed && (m.winner === 0 || m.winner === 1))
         ? data.players[m.winner]
         : "N/A";
 
       const gw = m.gameWins || [0,0];
+      const seasonWinImpact = m.completed
+        ? (m.wildcardActive ? "2 season wins to winner" : "1 season win to winner")
+        : (m.wildcardActive ? "Unresolved points count double" : "No season win awarded");
 
       html += `<div style="margin-top:8px; padding:8px; border:1px solid #eee; border-radius:10px;">
         <div class="row">
           <div>
-            <b>Match ${mi+1}</b> ${badge}
-            <div class="muted">Winner: ${winnerText} • ${when} • Games won: Alex ${gw[0]} - ${gw[1]} George</div>
+            <b>Match ${mi+1}</b> ${statusBadge} ${wildcardBadge}
+            <div class="muted">Winner: ${winnerText} • ${when} • Games won: Alex ${gw[0]} - ${gw[1]} George • ${seasonWinImpact}</div>
           </div>
           <div style="margin-left:auto;">
             <button class="small danger" onclick="deleteMatch(${si}, ${mi})">Delete</button>
@@ -458,7 +696,7 @@ function renderHistory(){
     });
   });
 
-  document.getElementById("history").innerHTML=html;
+  document.getElementById("history").innerHTML = html;
 }
 
 function renderCharts(){
@@ -466,7 +704,6 @@ function renderCharts(){
   if(comebackMatchChartInstance) comebackMatchChartInstance.destroy();
   if(comebackSeasonChartInstance) comebackSeasonChartInstance.destroy();
 
-  // Weekday win rate %
   const wr = computeWeekdayWinRatesPercent();
   weekdayWinRateChartInstance = new Chart(document.getElementById("weekdayWinRateChart"),{
     type:'bar',
@@ -480,7 +717,6 @@ function renderCharts(){
     options: { scales: { y: { min: 0, max: 100 } } }
   });
 
-  // Comeback match wins (count)
   const cm = computeComebackMatchWinCounts();
   comebackMatchChartInstance = new Chart(document.getElementById("comebackMatchChart"),{
     type:'bar',
@@ -491,7 +727,6 @@ function renderCharts(){
     options: { scales: { y: { beginAtZero: true } } }
   });
 
-  // Comeback season wins (count)
   const cs = computeComebackSeasonWinCounts();
   comebackSeasonChartInstance = new Chart(document.getElementById("comebackSeasonChart"),{
     type:'bar',
@@ -504,7 +739,11 @@ function renderCharts(){
 }
 
 /* ---------- INPUTS ---------- */
-function createInputs(){
+function renderAddMatchForm(){
+  const s = getCurrentSeason();
+  const wildcardAvailable = s && !s.wildcardUsed;
+  const wildcardHolderName = s ? data.players[s.wildcardHolder] : "N/A";
+
   let html="";
   html += `<div class="row muted" style="font-weight:600;">
     <div style="width:120px;"> </div>
@@ -523,20 +762,33 @@ function createInputs(){
   }
 
   html += `<div style="margin-top:8px;">
-    Date: <input type="date" id="matchDate"> 
+    Date: <input type="date" id="matchDate">
     Time: <input type="time" id="matchTime">
   </div>`;
 
+  html += `<div style="margin-top:8px;" class="muted">
+    Wildcard holder this season: <b>${wildcardHolderName}</b>
+  </div>`;
+
+  if(wildcardAvailable){
+    html += `<label style="display:block; margin:6px 0;">
+      <input id="wildcardActive" type="checkbox" style="width:auto;"> Activate wildcard for this match
+    </label>
+    <div class="smallnote">If this match is won, the winner gets <b>2 season wins</b>. If unresolved, its points count <b>double</b> for unresolved-match tiebreaks.</div>`;
+  } else {
+    html += `<div class="smallnote">Wildcard already used this season.</div>`;
+  }
+
   html += `Match Report (optional):<br><textarea id="matchReport"></textarea><br>`;
 
-  document.getElementById("inputs").innerHTML=html;
+  document.getElementById("inputs").innerHTML = html;
   setDateTimeToNow();
 }
 
 /* ---------- ACTIONS ---------- */
 window.addMatch = async function(){
   try {
-    let games=[];
+    let games = [];
     for(let i=0;i<5;i++){
       const a = parseInt(document.getElementById("a"+i).value);
       const b = parseInt(document.getElementById("b"+i).value);
@@ -551,6 +803,11 @@ window.addMatch = async function(){
     const time = document.getElementById("matchTime").value;
     const report = document.getElementById("matchReport").value;
 
+    const currentSeason = getCurrentSeason();
+    const wildcardAvailable = currentSeason && !currentSeason.wildcardUsed;
+    const wildcardCheckbox = document.getElementById("wildcardActive");
+    const wildcardActive = !!(wildcardAvailable && wildcardCheckbox && wildcardCheckbox.checked);
+
     const outcome = computeMatchOutcome(games);
 
     const match = {
@@ -561,7 +818,8 @@ window.addMatch = async function(){
       completed: outcome.completed,
       winner: outcome.winner,
       gameWins: outcome.gameWins,
-      comebackWin: outcome.comebackWin
+      comebackWin: outcome.comebackWin,
+      wildcardActive: wildcardActive
     };
 
     const all = flattenMatchesInStoredOrder();
@@ -570,7 +828,7 @@ window.addMatch = async function(){
 
     await saveData();
     resetMatchEntryForm();
-    loadData();
+    await loadData();
   } catch (e){
     console.error(e);
     alert("Error adding match. Check Console.");
@@ -583,15 +841,15 @@ window.deleteMatch = async function(seasonIndex, matchIndex){
     if(!ok) return;
 
     const all = [];
-    data.seasons.forEach((s, si)=>{
-      (s.matches || []).forEach((m, mi)=>{
+    data.seasons.forEach((s, si) => {
+      (s.matches || []).forEach((m, mi) => {
         if(!(si === seasonIndex && mi === matchIndex)) all.push(m);
       });
     });
 
     rebuildSeasonsFromMatches(all);
     await saveData();
-    loadData();
+    await loadData();
   } catch (e){
     console.error(e);
     alert("Error deleting match. Check Console.");
@@ -602,7 +860,6 @@ document.getElementById("addMatchBtn").addEventListener("click", () => {
   window.addMatch();
 });
 
-createInputs();
 loadData();
 
 </script>
