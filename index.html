@@ -3,6 +3,9 @@
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Alex vs George</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111111">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -36,23 +39,9 @@ body {
 }
 
 h1, h2, h3 { margin: 0 0 10px 0; }
-
-h1 {
-  font-size: 28px;
-  line-height: 1.1;
-  margin-top: 6px;
-  margin-bottom: 8px;
-}
-
-h2 {
-  font-size: 20px;
-  line-height: 1.2;
-}
-
-h3 {
-  font-size: 16px;
-  line-height: 1.2;
-}
+h1 { font-size: 28px; line-height: 1.1; margin-top: 6px; margin-bottom: 8px; }
+h2 { font-size: 20px; line-height: 1.2; }
+h3 { font-size: 16px; line-height: 1.2; }
 
 .card {
   background: var(--card);
@@ -67,7 +56,6 @@ h3 {
 .highlight { font-size: 20px; font-weight: 700; line-height: 1.2; }
 
 .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-.stack { display:flex; flex-direction:column; gap:10px; }
 
 input, textarea, select {
   width: 100%;
@@ -95,11 +83,9 @@ button {
   font-size: 15px;
 }
 
-button.secondary {
-  background: #6b7280;
-}
-
+button.secondary { background: #6b7280; }
 button.danger { background:#b00020; }
+button.google { background:#ffffff; color:#111111; border:1px solid #d9dee4; }
 
 button.small {
   padding:8px 10px;
@@ -356,6 +342,97 @@ hr {
   flex-wrap:wrap;
 }
 
+.stat-chip-grid {
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:10px;
+}
+
+.stat-chip {
+  background:#f8fafb;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px;
+}
+
+.stat-chip .label {
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:4px;
+}
+
+.stat-chip .value {
+  font-size:18px;
+  font-weight:700;
+}
+
+.auth-card {
+  max-width: 520px;
+  margin: 40px auto 0 auto;
+  text-align: center;
+}
+
+.auth-title {
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.auth-sub {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin-bottom: 20px;
+}
+
+.topbar {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom: 6px;
+}
+
+.user-pill {
+  background:#ffffff;
+  border:1px solid #d9dee4;
+  border-radius:999px;
+  padding:8px 12px;
+  font-size:12px;
+  color:#333;
+  box-shadow: var(--shadow);
+}
+
+.summary-grid {
+  display:grid;
+  grid-template-columns: 1fr;
+  gap:12px;
+}
+
+.summary-box {
+  background:#f8fafb;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px;
+}
+
+.summary-box h3 {
+  margin-bottom: 8px;
+}
+
+ul.clean-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+ul.clean-list li {
+  margin: 4px 0;
+  line-height: 1.35;
+}
+
+.hidden { display:none !important; }
+
 @media (min-width: 820px) {
   body {
     max-width: 1100px;
@@ -370,172 +447,265 @@ hr {
   .form-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 </style>
 </head>
 <body>
 
-<h1>🏆 Alex vs George</h1>
-<div id="status" class="muted">Loading…</div>
-
-<div class="tabbar">
-  <button class="tab-btn active" data-tab="homeTab">Home</button>
-  <button class="tab-btn" data-tab="analyticsTab">Analytics</button>
-  <button class="tab-btn" data-tab="historyTab">History</button>
-</div>
-
-<div id="homeTab" class="tab-panel active">
-  <div class="card">
-    <h2>Current Season</h2>
-    <div id="seasonScore" class="highlight"></div>
-    <div id="seasonMeta" class="muted"></div>
-    <div id="wildcardMeta" class="muted" style="margin-top:6px;"></div>
-
-    <div class="kpiRow" style="margin-top:12px;">
-      <div class="kpi">
-        <div class="kpi-label">Matches played</div>
-        <div class="kpi-value" id="matchesPlayedKpi">0/10</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Wildcard</div>
-        <div class="kpi-value" id="wildcardKpi">—</div>
-      </div>
+<div id="authView">
+  <div class="card auth-card">
+    <div class="auth-title">🏆 Alex vs George</div>
+    <div class="auth-sub">
+      Sign in with Google to access the shared squash tracker.
+      Only approved accounts can open the app.
     </div>
-  </div>
-
-  <div class="card">
-    <h2>Predictions</h2>
-    <div class="smallnote">Simple forecast based on all-time completed-match form, recent completed-match form, current season form, and current season position.</div>
-    <div class="grid2">
-      <div class="pred-card">
-        <div class="pred-title">Next match prediction</div>
-        <div class="pred-main" id="matchPredictionMain">—</div>
-        <div class="pred-sub" id="matchPredictionSub">—</div>
-      </div>
-      <div class="pred-card">
-        <div class="pred-title">Season prediction</div>
-        <div class="pred-main" id="seasonPredictionMain">—</div>
-        <div class="pred-sub" id="seasonPredictionSub">—</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Player Bios</h2>
-    <div class="smallnote">Light-touch summaries generated from the rivalry data.</div>
-    <div class="grid2">
-      <div class="bio-card">
-        <div class="bio-name">Alex</div>
-        <div class="bio-text" id="alexBio">—</div>
-      </div>
-      <div class="bio-card">
-        <div class="bio-name">George</div>
-        <div class="bio-text" id="georgeBio">—</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Current Season Leaderboard</h2>
-    <div class="smallnote">Ranked by current season match wins. If nobody reaches 5 wins by match 10, the tiebreak is unresolved-match point difference. If still tied, the season is a draw.</div>
-    <div class="tableWrap">
-      <table id="seasonLeaderboard"></table>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>All-Time Leaderboard</h2>
-    <div class="smallnote">Ordered by <b>Seasons Won</b>. Drawn seasons count as <b>0.5</b> each.</div>
-    <div class="tableWrap">
-      <table id="leaderboard"></table>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2 id="formTitle">Add Match</h2>
-    <div class="smallnote">Enter each game score as <b>Alex – George</b>. A completed match requires someone to win <b>3 valid games</b> (to 15, win by 2). Location, court, and pints are optional.</div>
-
-    <div id="editBanner" class="edit-banner" style="display:none;"></div>
-
-    <div id="inputs"></div>
-
-    <div class="action-row">
-      <button id="addMatchBtn">Add Match</button>
-      <button id="cancelEditBtn" class="secondary" style="display:none;">Cancel Edit</button>
-    </div>
+    <button id="googleSignInBtn" class="google">Sign in with Google</button>
+    <div id="authMessage" class="smallnote" style="margin-top:12px;"></div>
   </div>
 </div>
 
-<div id="analyticsTab" class="tab-panel">
-  <div class="card">
-    <h2>Streaks</h2>
-    <div class="smallnote">Completed matches only.</div>
-    <div class="grid2">
-      <div>
-        <h3 style="margin-bottom:8px;">Alex</h3>
-        <div class="streak-grid">
-          <div class="streak-box">
-            <div class="streak-name">Current win streak</div>
-            <div class="streak-value" id="alexCurrentStreak">0</div>
-          </div>
-          <div class="streak-box">
-            <div class="streak-name">Longest win streak</div>
-            <div class="streak-value" id="alexLongestStreak">0</div>
-          </div>
+<div id="appView" class="hidden">
+  <div class="topbar">
+    <div>
+      <h1>🏆 Alex vs George</h1>
+      <div id="status" class="muted">Loading…</div>
+    </div>
+    <div class="row">
+      <div id="userEmailPill" class="user-pill">Signed in</div>
+      <button id="signOutBtn" class="secondary">Sign out</button>
+    </div>
+  </div>
+
+  <div class="tabbar">
+    <button class="tab-btn active" data-tab="homeTab">Home</button>
+    <button class="tab-btn" data-tab="analyticsTab">Analytics</button>
+    <button class="tab-btn" data-tab="historyTab">History</button>
+  </div>
+
+  <div id="homeTab" class="tab-panel active">
+    <div class="card">
+      <h2>Current Season</h2>
+      <div id="seasonScore" class="highlight"></div>
+      <div id="seasonMeta" class="muted"></div>
+      <div id="wildcardMeta" class="muted" style="margin-top:6px;"></div>
+
+      <div class="kpiRow" style="margin-top:12px;">
+        <div class="kpi">
+          <div class="kpi-label">Matches played</div>
+          <div class="kpi-value" id="matchesPlayedKpi">0/10</div>
         </div>
-      </div>
-      <div>
-        <h3 style="margin-bottom:8px;">George</h3>
-        <div class="streak-grid">
-          <div class="streak-box">
-            <div class="streak-name">Current win streak</div>
-            <div class="streak-value" id="georgeCurrentStreak">0</div>
-          </div>
-          <div class="streak-box">
-            <div class="streak-name">Longest win streak</div>
-            <div class="streak-value" id="georgeLongestStreak">0</div>
-          </div>
+        <div class="kpi">
+          <div class="kpi-label">Wildcard</div>
+          <div class="kpi-value" id="wildcardKpi">—</div>
         </div>
       </div>
     </div>
-  </div>
 
-  <div class="card">
-    <h2>Charts</h2>
-
-    <div class="smallnote"><b>Win % by day of week</b> (completed matches only). Labels show sample size. Bars are 0–100%.</div>
-    <canvas id="weekdayWinRateChart"></canvas>
-
-    <hr>
-
-    <div class="smallnote"><b>Win % by time of day</b> (completed matches only). Buckets are based on logged match time.</div>
-    <canvas id="timeOfDayWinRateChart"></canvas>
-
-    <hr>
-
-    <div class="grid2">
-      <div>
-        <div class="smallnote"><b>Comeback Match Wins (count)</b>: completed matches won after trailing by 1+ games at some point.</div>
-        <canvas id="comebackMatchChart"></canvas>
+    <div class="card">
+      <h2>Predictions</h2>
+      <div class="smallnote">Simple forecast based on all-time completed-match form, recent completed-match form, current season form, and current season position.</div>
+      <div class="grid2">
+        <div class="pred-card">
+          <div class="pred-title">Next match prediction</div>
+          <div class="pred-main" id="matchPredictionMain">—</div>
+          <div class="pred-sub" id="matchPredictionSub">—</div>
+        </div>
+        <div class="pred-card">
+          <div class="pred-title">Season prediction</div>
+          <div class="pred-main" id="seasonPredictionMain">—</div>
+          <div class="pred-sub" id="seasonPredictionSub">—</div>
+        </div>
       </div>
-      <div>
-        <div class="smallnote"><b>Comeback Seasons Won (count)</b>: seasons won after trailing on season match wins at some point.</div>
-        <canvas id="comebackSeasonChart"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Player Bios</h2>
+      <div class="smallnote">Light-touch summaries generated from the rivalry data.</div>
+      <div class="grid2">
+        <div class="bio-card">
+          <div class="bio-name">Alex</div>
+          <div class="bio-text" id="alexBio">—</div>
+        </div>
+        <div class="bio-card">
+          <div class="bio-name">George</div>
+          <div class="bio-text" id="georgeBio">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Current Season Leaderboard</h2>
+      <div class="smallnote">Ranked by current season match wins. If nobody reaches 5 wins by match 10, the tiebreak is unresolved-match point difference. If still tied, the season is a draw.</div>
+      <div class="tableWrap">
+        <table id="seasonLeaderboard"></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>All-Time Leaderboard</h2>
+      <div class="smallnote">Ordered by <b>Seasons Won</b>. Drawn seasons count as <b>0.5</b> each.</div>
+      <div class="tableWrap">
+        <table id="leaderboard"></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 id="formTitle">Add Match</h2>
+      <div class="smallnote">Enter each game score as <b>Alex – George</b>. A completed match requires someone to win <b>3 valid games</b> (to 15, win by 2). Location, court, and pints are optional.</div>
+
+      <div id="editBanner" class="edit-banner" style="display:none;"></div>
+
+      <div id="inputs"></div>
+
+      <div class="action-row">
+        <button id="addMatchBtn">Add Match</button>
+        <button id="cancelEditBtn" class="secondary" style="display:none;">Cancel Edit</button>
       </div>
     </div>
   </div>
-</div>
 
-<div id="historyTab" class="tab-panel">
-  <div class="card">
-    <h2>Match History</h2>
-    <div class="muted">Tip: editing or deleting a match recalculates seasons, wildcard holders, and all stats.</div>
-    <div id="history"></div>
+  <div id="analyticsTab" class="tab-panel">
+    <div class="card">
+      <h2>Streaks</h2>
+      <div class="smallnote">Completed matches only.</div>
+      <div class="grid2">
+        <div>
+          <h3 style="margin-bottom:8px;">Alex</h3>
+          <div class="streak-grid">
+            <div class="streak-box">
+              <div class="streak-name">Current win streak</div>
+              <div class="streak-value" id="alexCurrentStreak">0</div>
+            </div>
+            <div class="streak-box">
+              <div class="streak-name">Longest win streak</div>
+              <div class="streak-value" id="alexLongestStreak">0</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3 style="margin-bottom:8px;">George</h3>
+          <div class="streak-grid">
+            <div class="streak-box">
+              <div class="streak-name">Current win streak</div>
+              <div class="streak-value" id="georgeCurrentStreak">0</div>
+            </div>
+            <div class="streak-box">
+              <div class="streak-name">Longest win streak</div>
+              <div class="streak-value" id="georgeLongestStreak">0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Charts</h2>
+
+      <div class="smallnote"><b>Win % by day of week</b> (completed matches only). Labels show sample size. Bars are 0–100%.</div>
+      <canvas id="weekdayWinRateChart"></canvas>
+
+      <hr>
+
+      <div class="smallnote"><b>Win % by time of day</b> (completed matches only). Buckets are based on logged match time.</div>
+      <canvas id="timeOfDayWinRateChart"></canvas>
+
+      <hr>
+
+      <div class="grid2">
+        <div>
+          <div class="smallnote"><b>Comeback Match Wins (count)</b>: completed matches won after trailing by 1+ games at some point.</div>
+          <canvas id="comebackMatchChart"></canvas>
+        </div>
+        <div>
+          <div class="smallnote"><b>Comeback Seasons Won (count)</b>: seasons won after trailing on season match wins at some point.</div>
+          <canvas id="comebackSeasonChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Metadata Analytics</h2>
+      <div class="smallnote">These use completed matches where the relevant field is present. Old matches without location, court, or pints are ignored for those specific views.</div>
+
+      <div class="grid2" style="margin-top:12px;">
+        <div>
+          <h3 style="margin-bottom:8px;">Average post-match pints</h3>
+          <div class="stat-chip-grid">
+            <div class="stat-chip">
+              <div class="label">Alex after wins</div>
+              <div class="value" id="alexAvgPintsWins">—</div>
+            </div>
+            <div class="stat-chip">
+              <div class="label">Alex after losses</div>
+              <div class="value" id="alexAvgPintsLosses">—</div>
+            </div>
+            <div class="stat-chip">
+              <div class="label">George after wins</div>
+              <div class="value" id="georgeAvgPintsWins">—</div>
+            </div>
+            <div class="stat-chip">
+              <div class="label">George after losses</div>
+              <div class="value" id="georgeAvgPintsLosses">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin-bottom:8px;">Win % by pints bucket</h3>
+          <div class="tableWrap">
+            <table id="pintsBucketTable"></table>
+          </div>
+        </div>
+      </div>
+
+      <hr>
+
+      <div class="grid2">
+        <div>
+          <h3 style="margin-bottom:8px;">Win % by location</h3>
+          <div class="tableWrap">
+            <table id="locationStatsTable"></table>
+          </div>
+        </div>
+        <div>
+          <h3 style="margin-bottom:8px;">Win % by court</h3>
+          <div class="tableWrap">
+            <table id="courtStatsTable"></table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Fun Summary</h2>
+      <div class="smallnote">Quick rivalry highlights based on the data collected so far.</div>
+      <div class="summary-grid">
+        <div class="summary-box">
+          <h3>Clutch & chaos</h3>
+          <ul class="clean-list" id="summaryClutch"></ul>
+        </div>
+        <div class="summary-box">
+          <h3>Venues & pints</h3>
+          <ul class="clean-list" id="summaryMeta"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="historyTab" class="tab-panel">
+    <div class="card">
+      <h2>Match History</h2>
+      <div class="muted">Tip: editing or deleting a match recalculates seasons, wildcard holders, and all stats.</div>
+      <div id="history"></div>
+    </div>
   </div>
 </div>
 
 <script type="module">
-
 const firebaseConfig = {
   apiKey: "AIzaSyDfpeuk-5wI3bAAOh799W20ZjCNKj6G4Nc",
   authDomain: "squash-rivalry.firebaseapp.com",
@@ -546,14 +716,29 @@ const firebaseConfig = {
 };
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+const ALLOWED_EMAILS = [
+  "alexrobinson399@gmail.com",
+  "george97muscat@gmail.com"
+];
+
 const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 const db = getFirestore(app);
 
 let data;
 let currentTab = "homeTab";
-let currentEdit = null; // { seasonIndex, matchIndex }
+let currentEdit = null;
+let currentUser = null;
 
 let weekdayWinRateChartInstance = null;
 let timeOfDayWinRateChartInstance = null;
@@ -562,28 +747,51 @@ let comebackSeasonChartInstance = null;
 
 function setStatusOk(msg){
   const el = document.getElementById("status");
+  if(!el) return;
   el.className = "muted status-ok";
   el.textContent = msg;
 }
 
 function setStatusErr(msg){
   const el = document.getElementById("status");
+  if(!el) return;
   el.className = "muted status-err";
   el.textContent = msg;
 }
 
+function setAuthMessage(msg){
+  const el = document.getElementById("authMessage");
+  el.textContent = msg || "";
+}
+
+function showAuthView(){
+  document.getElementById("authView").classList.remove("hidden");
+  document.getElementById("appView").classList.add("hidden");
+}
+
+function showAppView(){
+  document.getElementById("authView").classList.add("hidden");
+  document.getElementById("appView").classList.remove("hidden");
+}
+
+function isAllowedEmail(email){
+  return !!email && ALLOWED_EMAILS.includes(email.toLowerCase());
+}
+
 function pad2(n){ return String(n).padStart(2, "0"); }
+function formatNumberMaybeHalf(n){ return Number.isInteger(n) ? String(n) : n.toFixed(1); }
+function formatSigned(n){ return `${n > 0 ? "+" : ""}${n}`; }
+function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+function safePct(wins, total){ return total ? Math.round((wins / total) * 100) : 0; }
 
-function formatNumberMaybeHalf(n){
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+function avgOrDash(arr){
+  if(!arr.length) return "—";
+  const avg = arr.reduce((a,b) => a + b, 0) / arr.length;
+  return avg.toFixed(1);
 }
 
-function formatSigned(n){
-  return `${n > 0 ? "+" : ""}${n}`;
-}
-
-function clamp(n, min, max){
-  return Math.max(min, Math.min(max, n));
+function titleCaseLoose(str){
+  return String(str || "").trim().replace(/\s+/g, " ");
 }
 
 function getWeekdayShortFromISODate(isoDate){
@@ -723,7 +931,6 @@ function getMatchBySeasonAndIndex(seasonIndex, matchIndex){
 function seasonHasOtherWildcard(seasonIndex, matchIndex){
   const season = data.seasons?.[seasonIndex];
   if(!season || !Array.isArray(season.matches)) return false;
-
   return season.matches.some((m, idx) => idx !== matchIndex && !!m.wildcardActive);
 }
 
@@ -1138,6 +1345,157 @@ function computeStreakStats(){
   };
 }
 
+function computeLocationStats(){
+  const bucketMap = new Map();
+
+  getCompletedMatchesInStoredOrder().forEach(m => {
+    const location = titleCaseLoose(m.location);
+    if(!location) return;
+
+    if(!bucketMap.has(location)){
+      bucketMap.set(location, { label: location, wins: [0,0], total: 0 });
+    }
+
+    const row = bucketMap.get(location);
+    row.total += 1;
+    row.wins[m.winner] += 1;
+  });
+
+  return [...bucketMap.values()]
+    .sort((a,b) => b.total - a.total || a.label.localeCompare(b.label));
+}
+
+function computeCourtStats(){
+  const bucketMap = new Map();
+
+  getCompletedMatchesInStoredOrder().forEach(m => {
+    const court = titleCaseLoose(m.court);
+    if(!court) return;
+
+    if(!bucketMap.has(court)){
+      bucketMap.set(court, { label: court, wins: [0,0], total: 0 });
+    }
+
+    const row = bucketMap.get(court);
+    row.total += 1;
+    row.wins[m.winner] += 1;
+  });
+
+  return [...bucketMap.values()]
+    .sort((a,b) => b.total - a.total || a.label.localeCompare(b.label));
+}
+
+function getPintsBucket(value){
+  if(typeof value !== "number" || isNaN(value)) return null;
+  if(value === 0) return "0";
+  if(value > 0 && value <= 1.5) return "0.5–1.5";
+  return "2+";
+}
+
+function computePintsBucketStats(){
+  const labels = ["0","0.5–1.5","2+"];
+  const rows = labels.map(label => ({ label, wins:[0,0], total:0 }));
+
+  getCompletedMatchesInStoredOrder().forEach(m => {
+    const bucket = getPintsBucket(m.pints);
+    if(!bucket) return;
+    const row = rows.find(r => r.label === bucket);
+    row.total += 1;
+    row.wins[m.winner] += 1;
+  });
+
+  return rows;
+}
+
+function computeAveragePintsStats(){
+  const alexWins = [];
+  const alexLosses = [];
+  const georgeWins = [];
+  const georgeLosses = [];
+
+  getCompletedMatchesInStoredOrder().forEach(m => {
+    if(typeof m.pints !== "number" || isNaN(m.pints)) return;
+
+    if(m.winner === 0){
+      alexWins.push(m.pints);
+      georgeLosses.push(m.pints);
+    } else if(m.winner === 1){
+      georgeWins.push(m.pints);
+      alexLosses.push(m.pints);
+    }
+  });
+
+  return {
+    alexWins: avgOrDash(alexWins),
+    alexLosses: avgOrDash(alexLosses),
+    georgeWins: avgOrDash(georgeWins),
+    georgeLosses: avgOrDash(georgeLosses)
+  };
+}
+
+function computeFunSummary(){
+  const completed = getCompletedMatchesInStoredOrder();
+  const streaks = computeStreakStats();
+  const locationRows = computeLocationStats();
+  const courtRows = computeCourtStats();
+  const pintsRows = computePintsBucketStats();
+
+  const clutch = [];
+  const meta = [];
+
+  if(completed.length === 0){
+    clutch.push("No completed matches yet.");
+    meta.push("Log a few matches with metadata to unlock the fun stuff.");
+    return { clutch, meta };
+  }
+
+  const comeback = computeComebackMatchWinCounts().comebackWins;
+  if(comeback[0] > comeback[1]){
+    clutch.push(`Alex leads the comeback count ${comeback[0]} to ${comeback[1]}.`);
+  } else if(comeback[1] > comeback[0]){
+    clutch.push(`George leads the comeback count ${comeback[1]} to ${comeback[0]}.`);
+  } else {
+    clutch.push(`Comebacks are level at ${comeback[0]} each.`);
+  }
+
+  if(streaks.alexLongest > streaks.georgeLongest){
+    clutch.push(`Alex owns the longer winning streak (${streaks.alexLongest}).`);
+  } else if(streaks.georgeLongest > streaks.alexLongest){
+    clutch.push(`George owns the longer winning streak (${streaks.georgeLongest}).`);
+  } else {
+    clutch.push(`Longest winning streak is tied at ${streaks.alexLongest}.`);
+  }
+
+  const currentSeason = getCurrentSeason();
+  if(currentSeason.wins[0] !== currentSeason.wins[1]){
+    const leader = currentSeason.wins[0] > currentSeason.wins[1] ? "Alex" : "George";
+    clutch.push(`${leader} currently leads the season race.`);
+  } else {
+    clutch.push(`The current season race is level on match wins.`);
+  }
+
+  if(locationRows.length){
+    meta.push(`Most-played venue: ${locationRows[0].label} (${locationRows[0].total} completed matches).`);
+  } else {
+    meta.push(`No venue trend yet — location data needs more matches.`);
+  }
+
+  if(courtRows.length){
+    meta.push(`Most-used court label: ${courtRows[0].label} (${courtRows[0].total} matches).`);
+  } else {
+    meta.push(`No court trend yet — court data needs more matches.`);
+  }
+
+  const busiestPints = [...pintsRows].sort((a,b) => b.total - a.total)[0];
+  if(busiestPints && busiestPints.total > 0){
+    meta.push(`Most common post-match pints bucket: ${busiestPints.label} (n=${busiestPints.total}).`);
+  } else {
+    meta.push(`No post-match pints pattern yet.`);
+  }
+
+  return { clutch, meta };
+}
+
 /* ---------- PREDICTIONS ---------- */
 function computePredictionData(){
   const completed = getCompletedMatchesInStoredOrder();
@@ -1215,7 +1573,7 @@ function computePredictionData(){
 }
 
 /* ---------- BIOS ---------- */
-function extractReportSignal(playerIndex){
+function extractReportSignal(){
   const keywordsPositive = ["dominated","comfortable","clinical","sharp","strong","fit","solid","composed","focused","aggressive","attacking"];
   const keywordsChaos = ["scrappy","chaotic","wild","messy","swing","momentum","rollercoaster","tight","battle","grind"];
   const keywordsComeback = ["comeback","came back","recovered","turned it around","fightback"];
@@ -1241,9 +1599,8 @@ function extractReportSignal(playerIndex){
 function buildPlayerBio(playerIndex){
   const rawStats = calculateRawAllTimeStats();
   const streaks = computeStreakStats();
-  const completed = getCompletedMatchesInStoredOrder();
   const comebacks = computeComebackMatchWinCounts().comebackWins;
-  const reportSignal = extractReportSignal(playerIndex);
+  const reportSignal = extractReportSignal();
 
   const me = rawStats[playerIndex];
   const opp = rawStats[1 - playerIndex];
@@ -1527,6 +1884,64 @@ function renderStreaks(){
   document.getElementById("georgeLongestStreak").textContent = s.georgeLongest;
 }
 
+function renderMetadataAnalytics(){
+  const avg = computeAveragePintsStats();
+  document.getElementById("alexAvgPintsWins").textContent = avg.alexWins;
+  document.getElementById("alexAvgPintsLosses").textContent = avg.alexLosses;
+  document.getElementById("georgeAvgPintsWins").textContent = avg.georgeWins;
+  document.getElementById("georgeAvgPintsLosses").textContent = avg.georgeLosses;
+
+  const pintsRows = computePintsBucketStats();
+  let pintsHtml = "<tr><th>Bucket</th><th>Alex Win %</th><th>George Win %</th><th>n</th></tr>";
+  pintsRows.forEach(r => {
+    pintsHtml += `<tr>
+      <td>${r.label}</td>
+      <td>${safePct(r.wins[0], r.total)}%</td>
+      <td>${safePct(r.wins[1], r.total)}%</td>
+      <td>${r.total}</td>
+    </tr>`;
+  });
+  document.getElementById("pintsBucketTable").innerHTML = pintsHtml;
+
+  const locationRows = computeLocationStats();
+  let locationHtml = "<tr><th>Location</th><th>Alex Win %</th><th>George Win %</th><th>n</th></tr>";
+  if(locationRows.length === 0){
+    locationHtml += `<tr><td colspan="4" class="muted">No completed matches with location logged yet.</td></tr>`;
+  } else {
+    locationRows.forEach(r => {
+      locationHtml += `<tr>
+        <td>${escapeHtml(r.label)}</td>
+        <td>${safePct(r.wins[0], r.total)}%</td>
+        <td>${safePct(r.wins[1], r.total)}%</td>
+        <td>${r.total}</td>
+      </tr>`;
+    });
+  }
+  document.getElementById("locationStatsTable").innerHTML = locationHtml;
+
+  const courtRows = computeCourtStats();
+  let courtHtml = "<tr><th>Court</th><th>Alex Win %</th><th>George Win %</th><th>n</th></tr>";
+  if(courtRows.length === 0){
+    courtHtml += `<tr><td colspan="4" class="muted">No completed matches with court logged yet.</td></tr>`;
+  } else {
+    courtRows.forEach(r => {
+      courtHtml += `<tr>
+        <td>${escapeHtml(r.label)}</td>
+        <td>${safePct(r.wins[0], r.total)}%</td>
+        <td>${safePct(r.wins[1], r.total)}%</td>
+        <td>${r.total}</td>
+      </tr>`;
+    });
+  }
+  document.getElementById("courtStatsTable").innerHTML = courtHtml;
+}
+
+function renderFunSummary(){
+  const summary = computeFunSummary();
+  document.getElementById("summaryClutch").innerHTML = summary.clutch.map(x => `<li>${escapeHtml(x)}</li>`).join("");
+  document.getElementById("summaryMeta").innerHTML = summary.meta.map(x => `<li>${escapeHtml(x)}</li>`).join("");
+}
+
 function destroyCharts(){
   if(weekdayWinRateChartInstance){
     weekdayWinRateChartInstance.destroy();
@@ -1621,6 +2036,8 @@ function renderCharts(){
 
 function renderAnalyticsTab(){
   renderStreaks();
+  renderMetadataAnalytics();
+  renderFunSummary();
   renderCharts();
 }
 
@@ -1671,20 +2088,20 @@ function renderAddMatchForm(){
     </div>
     <div>
       <label class="muted">Location (optional)</label>
-      <input type="text" id="matchLocation" placeholder="e.g. Brixton Rec">
+      <input type="text" id="matchLocation" placeholder="e.g. Your squash venue">
     </div>
     <div>
       <label class="muted">Court (optional)</label>
       <input type="text" id="matchCourt" placeholder="e.g. Court 2">
     </div>
     <div>
-      <label class="muted">Pints after (optional)</label>
+      <label class="muted">Pints after match (optional)</label>
       <input type="number" step="0.5" min="0" id="matchPints" placeholder="e.g. 2">
     </div>
   </div>`;
 
   html += `<div style="margin-top:12px;" class="muted">
-    Wildcard holder for this ${currentEdit ? "season" : "season"}: <b>${wildcardHolderName}</b>
+    Wildcard holder for this season: <b>${wildcardHolderName}</b>
   </div>`;
 
   if(wildcardAvailable){
@@ -1705,7 +2122,7 @@ function renderAddMatchForm(){
   document.getElementById("inputs").innerHTML = html;
 
   if(currentEdit && editingMatch){
-    populateFormForEditing(editingMatch, currentEdit.seasonIndex, currentEdit.matchIndex);
+    populateFormForEditing(editingMatch);
   } else {
     setDateTimeToNow();
   }
@@ -1916,6 +2333,50 @@ window.deleteMatch = async function(seasonIndex, matchIndex){
   }
 };
 
+/* ---------- AUTH ---------- */
+async function handleGoogleSignIn(){
+  try {
+    setAuthMessage("Opening Google sign-in…");
+    const result = await signInWithPopup(auth, provider);
+    const email = result.user?.email?.toLowerCase() || "";
+
+    if(!isAllowedEmail(email)){
+      await signOut(auth);
+      setAuthMessage("That Google account is not approved for this app.");
+      alert("That Google account is not approved for this app.");
+      return;
+    }
+
+    setAuthMessage("");
+  } catch (e){
+    console.error(e);
+    setAuthMessage("Sign-in failed. Try again.");
+  }
+}
+
+async function handleSignOut(){
+  try {
+    await signOut(auth);
+  } catch (e){
+    console.error(e);
+    alert("Sign-out failed.");
+  }
+}
+
+function registerServiceWorker(){
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(err => {
+        console.error("Service worker registration failed:", err);
+      });
+    });
+  }
+}
+
+/* ---------- BOOT ---------- */
+document.getElementById("googleSignInBtn").addEventListener("click", handleGoogleSignIn);
+document.getElementById("signOutBtn").addEventListener("click", handleSignOut);
+
 document.getElementById("addMatchBtn").addEventListener("click", async () => {
   try {
     await saveMatchFromForm();
@@ -1933,8 +2394,29 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
-loadData();
+onAuthStateChanged(auth, async (user) => {
+  if(!user){
+    currentUser = null;
+    showAuthView();
+    destroyCharts();
+    return;
+  }
 
+  const email = user.email?.toLowerCase() || "";
+  if(!isAllowedEmail(email)){
+    await signOut(auth);
+    showAuthView();
+    setAuthMessage("That Google account is not approved for this app.");
+    return;
+  }
+
+  currentUser = user;
+  document.getElementById("userEmailPill").textContent = email;
+  showAppView();
+  await loadData();
+});
+
+registerServiceWorker();
 </script>
 </body>
 </html>
