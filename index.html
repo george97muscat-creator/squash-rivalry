@@ -539,7 +539,7 @@ ul.clean-list li {
 
     <div class="card">
       <h2>Current Season Leaderboard</h2>
-      <div class="smallnote">Ranked by current season match wins. If nobody reaches 5 wins by match 10, the tiebreak is unresolved-match point difference. If still tied, the season is a draw.</div>
+      <div class="smallnote">Ranked by current season points. If tied after 10 matches, the tiebreak is unresolved-match point difference. If still tied, the season is a draw.</div>
       <div class="tableWrap">
         <table id="seasonLeaderboard"></table>
       </div>
@@ -555,7 +555,7 @@ ul.clean-list li {
 
     <div class="card">
       <h2 id="formTitle">Add Match</h2>
-      <div class="smallnote">Enter each game score as <b>Alex – George</b>. A completed match requires someone to win <b>3 valid games</b> (to 15, win by 2). Location, court, and pints are optional.</div>
+      <div class="smallnote">Enter each game score as <b>Alex – George</b>. A valid final match score can be <b>2–1</b>, <b>2–2</b>, <b>3-x</b>, <b>4-x</b>, or <b>5-x</b>. Wildcard doubles the season points awarded for that match. Location, court, pints, and toss winner are optional.</div>
 
       <div id="editBanner" class="edit-banner" style="display:none;"></div>
 
@@ -571,7 +571,7 @@ ul.clean-list li {
   <div id="analyticsTab" class="tab-panel">
     <div class="card">
       <h2>Streaks</h2>
-      <div class="smallnote">Completed matches only.</div>
+      <div class="smallnote">Win streaks count winner-led completed matches only, so 2–2 does not extend either streak.</div>
       <div class="grid2">
         <div>
           <h3 style="margin-bottom:8px;">Alex</h3>
@@ -605,12 +605,12 @@ ul.clean-list li {
     <div class="card">
       <h2>Charts</h2>
 
-      <div class="smallnote"><b>Win % by day of week</b> (completed matches only). Labels show sample size. Bars are 0–100%.</div>
+      <div class="smallnote"><b>Win % by day of week</b> (winner-led completed matches only). Labels show sample size. Bars are 0–100%.</div>
       <canvas id="weekdayWinRateChart"></canvas>
 
       <hr>
 
-      <div class="smallnote"><b>Win % by time of day</b> (completed matches only). Buckets are based on logged match time.</div>
+      <div class="smallnote"><b>Win % by time of day</b> (winner-led completed matches only). Buckets are based on logged match time.</div>
       <canvas id="timeOfDayWinRateChart"></canvas>
 
       <hr>
@@ -621,7 +621,7 @@ ul.clean-list li {
           <canvas id="comebackMatchChart"></canvas>
         </div>
         <div>
-          <div class="smallnote"><b>Comeback Seasons Won (count)</b>: seasons won after trailing on season match wins at some point.</div>
+          <div class="smallnote"><b>Comeback Seasons Won (count)</b>: seasons won after trailing on season points at some point.</div>
           <canvas id="comebackSeasonChart"></canvas>
         </div>
       </div>
@@ -629,7 +629,7 @@ ul.clean-list li {
 
     <div class="card">
       <h2>Metadata Analytics</h2>
-      <div class="smallnote">These use completed matches where the relevant field is present. Old matches without location, court, or pints are ignored for those specific views.</div>
+      <div class="smallnote">These use winner-led completed matches where the relevant field is present. Old matches without location, court, pints, or toss winner are ignored for those specific views.</div>
 
       <div class="grid2" style="margin-top:12px;">
         <div>
@@ -730,6 +730,8 @@ const ALLOWED_EMAILS = [
   "george97muscat@gmail.com"
 ];
 
+const MAX_GAMES = 9;
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
@@ -824,7 +826,7 @@ function setDateTimeToNow(){
 }
 
 function clearMatchEntryFormFields(){
-  for(let i=0;i<5;i++){
+  for(let i=0;i<MAX_GAMES;i++){
     const a = document.getElementById("a"+i);
     const b = document.getElementById("b"+i);
     if(a) a.value = "";
@@ -836,12 +838,14 @@ function clearMatchEntryFormFields(){
   const court = document.getElementById("matchCourt");
   const pints = document.getElementById("matchPints");
   const wild = document.getElementById("wildcardActive");
+  const toss = document.getElementById("tossWinner");
 
   if(report) report.value = "";
   if(location) location.value = "";
   if(court) court.value = "";
   if(pints) pints.value = "";
   if(wild) wild.checked = false;
+  if(toss) toss.value = "";
 }
 
 function resetMatchEntryForm(){
@@ -944,7 +948,48 @@ function getValidGameWinner(a, g){
   return (a > g) ? 0 : 1;
 }
 
-function computeMatchOutcome(games){
+function getBaseSeasonPointsFromGameWins(gameWins){
+  const a = gameWins[0];
+  const g = gameWins[1];
+
+  if(a === 2 && g === 2){
+    return {
+      completed: true,
+      winner: null,
+      isDraw: true,
+      seasonPoints: [1,1]
+    };
+  }
+
+  if(a === 2 && g === 1) return { completed:true, winner:0, isDraw:false, seasonPoints:[2,0] };
+  if(g === 2 && a === 1) return { completed:true, winner:1, isDraw:false, seasonPoints:[0,2] };
+
+  if(a === 3 && g >= 0 && g <= 2) return { completed:true, winner:0, isDraw:false, seasonPoints:[3,0] };
+  if(g === 3 && a >= 0 && a <= 2) return { completed:true, winner:1, isDraw:false, seasonPoints:[0,3] };
+
+  if(a === 4 && g >= 0 && g <= 3) return { completed:true, winner:0, isDraw:false, seasonPoints:[4,0] };
+  if(g === 4 && a >= 0 && a <= 3) return { completed:true, winner:1, isDraw:false, seasonPoints:[0,4] };
+
+  if(a === 5 && g >= 0 && g <= 4) return { completed:true, winner:0, isDraw:false, seasonPoints:[5,0] };
+  if(g === 5 && a >= 0 && a <= 4) return { completed:true, winner:1, isDraw:false, seasonPoints:[0,5] };
+
+  return {
+    completed: false,
+    winner: null,
+    isDraw: false,
+    seasonPoints: [0,0]
+  };
+}
+
+function applyWildcardToSeasonPoints(baseSeasonPoints, wildcardActive){
+  const mult = wildcardActive ? 2 : 1;
+  return [
+    baseSeasonPoints[0] * mult,
+    baseSeasonPoints[1] * mult
+  ];
+}
+
+function computeMatchOutcome(games, wildcardActive=false){
   let gameWins = [0,0];
   let alexTrailed = false;
   let georgeTrailed = false;
@@ -957,18 +1002,24 @@ function computeMatchOutcome(games){
 
     if(gameWins[0] < gameWins[1]) alexTrailed = true;
     if(gameWins[1] < gameWins[0]) georgeTrailed = true;
-
-    if(gameWins[0] >= 3 || gameWins[1] >= 3) break;
   }
 
-  const completed = (gameWins[0] >= 3 || gameWins[1] >= 3);
-  const winner = completed ? (gameWins[0] > gameWins[1] ? 0 : 1) : null;
+  const base = getBaseSeasonPointsFromGameWins(gameWins);
+  const seasonPoints = applyWildcardToSeasonPoints(base.seasonPoints, wildcardActive);
 
   let comebackWin = false;
-  if(completed && winner === 0) comebackWin = alexTrailed;
-  if(completed && winner === 1) comebackWin = georgeTrailed;
+  if(base.completed && base.winner === 0) comebackWin = alexTrailed;
+  if(base.completed && base.winner === 1) comebackWin = georgeTrailed;
 
-  return { completed, winner, gameWins, comebackWin };
+  return {
+    completed: base.completed,
+    winner: base.winner,
+    isDraw: base.isDraw,
+    gameWins,
+    comebackWin,
+    baseSeasonPoints: base.seasonPoints,
+    seasonPoints
+  };
 }
 
 function getRawMatchPointDiff(match){
@@ -1012,7 +1063,7 @@ function createEmptySeason(seasonIndex){
   const holder = ((data.firstWildcardHolder + seasonIndex) % 2);
   return {
     matches: [],
-    wins: [0,0],
+    seasonPoints: [0,0],
     winner: null,
     isDraw: false,
     finished: false,
@@ -1028,19 +1079,32 @@ function rebuildSeasonsFromMatches(allMatches){
   let current = createEmptySeason(seasonIndex);
 
   for(const originalMatch of allMatches){
+    const wildcardActive = !!originalMatch.wildcardActive;
+    const games = Array.isArray(originalMatch.games) ? originalMatch.games : [];
+    const outcome = computeMatchOutcome(games, wildcardActive);
+
+    const tossWinner =
+      (originalMatch.tossWinner === 0 || originalMatch.tossWinner === 1)
+        ? originalMatch.tossWinner
+        : null;
+
     const match = {
-      games: Array.isArray(originalMatch.games) ? originalMatch.games : [],
+      games,
       date: originalMatch.date || "",
       time: originalMatch.time || "",
       report: originalMatch.report || "",
       location: originalMatch.location || "",
       court: originalMatch.court || "",
       pints: (typeof originalMatch.pints === "number" && !isNaN(originalMatch.pints)) ? originalMatch.pints : null,
-      completed: !!originalMatch.completed,
-      winner: (originalMatch.winner === 0 || originalMatch.winner === 1) ? originalMatch.winner : null,
-      gameWins: Array.isArray(originalMatch.gameWins) ? originalMatch.gameWins : [0,0],
-      comebackWin: !!originalMatch.comebackWin,
-      wildcardActive: !!originalMatch.wildcardActive
+      tossWinner,
+      completed: outcome.completed,
+      winner: (outcome.winner === 0 || outcome.winner === 1) ? outcome.winner : null,
+      isDraw: !!outcome.isDraw,
+      gameWins: outcome.gameWins,
+      comebackWin: !!outcome.comebackWin,
+      wildcardActive,
+      baseSeasonPoints: outcome.baseSeasonPoints,
+      seasonPointsAwarded: outcome.seasonPoints
     };
 
     current.matches.push(match);
@@ -1049,26 +1113,17 @@ function rebuildSeasonsFromMatches(allMatches){
       current.wildcardUsed = true;
     }
 
-    if(match.completed && (match.winner === 0 || match.winner === 1)){
-      const award = match.wildcardActive ? 2 : 1;
-      current.wins[match.winner] += award;
-    }
-
-    if(current.wins[0] >= 5 || current.wins[1] >= 5){
-      current.finished = true;
-      current.winner = current.wins[0] >= 5 ? 0 : 1;
-      seasons.push(current);
-      seasonIndex++;
-      current = createEmptySeason(seasonIndex);
-      continue;
+    if(match.completed){
+      current.seasonPoints[0] += match.seasonPointsAwarded[0];
+      current.seasonPoints[1] += match.seasonPointsAwarded[1];
     }
 
     if(current.matches.length >= 10){
       current.finished = true;
 
-      if(current.wins[0] > current.wins[1]){
+      if(current.seasonPoints[0] > current.seasonPoints[1]){
         current.winner = 0;
-      } else if(current.wins[1] > current.wins[0]){
+      } else if(current.seasonPoints[1] > current.seasonPoints[0]){
         current.winner = 1;
       } else {
         const unresolvedDiff = getSeasonUnresolvedPointDiff(current);
@@ -1165,26 +1220,36 @@ function calculateAllTimeStats(){
 function calculateCurrentSeasonStats(){
   const s = getCurrentSeason();
 
+  const completedMatchWins = [0,0];
+  (s.matches || []).forEach(m => {
+    if(m && m.completed && (m.winner === 0 || m.winner === 1)){
+      completedMatchWins[m.winner] += 1;
+    }
+  });
+
   let rows = [
     {
       playerIndex: 0,
       name: "Alex",
-      matchWins: s.wins?.[0] ?? 0,
+      seasonPoints: s.seasonPoints?.[0] ?? 0,
+      completedMatchWins: completedMatchWins[0],
       overallPointsDiff: getSeasonOverallPointDiff(s),
       unresolvedPointsDiff: getSeasonUnresolvedPointDiff(s)
     },
     {
       playerIndex: 1,
       name: "George",
-      matchWins: s.wins?.[1] ?? 0,
+      seasonPoints: s.seasonPoints?.[1] ?? 0,
+      completedMatchWins: completedMatchWins[1],
       overallPointsDiff: -getSeasonOverallPointDiff(s),
       unresolvedPointsDiff: -getSeasonUnresolvedPointDiff(s)
     }
   ];
 
   rows.sort((a,b) => {
-    if(b.matchWins !== a.matchWins) return b.matchWins - a.matchWins;
+    if(b.seasonPoints !== a.seasonPoints) return b.seasonPoints - a.seasonPoints;
     if(b.unresolvedPointsDiff !== a.unresolvedPointsDiff) return b.unresolvedPointsDiff - a.unresolvedPointsDiff;
+    if(b.completedMatchWins !== a.completedMatchWins) return b.completedMatchWins - a.completedMatchWins;
     return b.overallPointsDiff - a.overallPointsDiff;
   });
 
@@ -1287,10 +1352,10 @@ function computeComebackSeasonWinCounts(){
 
     (season.matches || []).forEach(m => {
       if(!m || !m.completed) return;
-      if(m.winner !== 0 && m.winner !== 1) return;
 
-      const award = m.wildcardActive ? 2 : 1;
-      score[m.winner] += award;
+      const pts = Array.isArray(m.seasonPointsAwarded) ? m.seasonPointsAwarded : [0,0];
+      score[0] += pts[0];
+      score[1] += pts[1];
 
       if(score[w] < score[1-w]) winnerTrailed = true;
     });
@@ -1444,7 +1509,7 @@ function computeFunSummary(){
   const meta = [];
 
   if(completed.length === 0){
-    clutch.push("No completed matches yet.");
+    clutch.push("No winner-led completed matches yet.");
     meta.push("Log a few matches with metadata to unlock the fun stuff.");
     return { clutch, meta };
   }
@@ -1467,15 +1532,15 @@ function computeFunSummary(){
   }
 
   const currentSeason = getCurrentSeason();
-  if(currentSeason.wins[0] !== currentSeason.wins[1]){
-    const leader = currentSeason.wins[0] > currentSeason.wins[1] ? "Alex" : "George";
-    clutch.push(`${leader} currently leads the season race.`);
+  if((currentSeason.seasonPoints?.[0] ?? 0) !== (currentSeason.seasonPoints?.[1] ?? 0)){
+    const leader = (currentSeason.seasonPoints?.[0] ?? 0) > (currentSeason.seasonPoints?.[1] ?? 0) ? "Alex" : "George";
+    clutch.push(`${leader} currently leads the season on season points.`);
   } else {
-    clutch.push(`The current season race is level on match wins.`);
+    clutch.push(`The current season is level on season points.`);
   }
 
   if(locationRows.length){
-    meta.push(`Most-played venue: ${locationRows[0].label} (${locationRows[0].total} completed matches).`);
+    meta.push(`Most-played venue: ${locationRows[0].label} (${locationRows[0].total} winner-led completed matches).`);
   } else {
     meta.push(`No venue trend yet — location data needs more matches.`);
   }
@@ -1512,16 +1577,16 @@ function computePredictionData(){
     if(m.winner === 0 || m.winner === 1) recentWins[m.winner]++;
   });
 
-  const seasonCompletedWins = [...(currentSeason.wins || [0,0])];
+  const seasonPoints = [...(currentSeason.seasonPoints || [0,0])];
   const seasonUnresolvedDiff = getSeasonUnresolvedPointDiff(currentSeason);
 
   const allTimeTotal = allTimeWins[0] + allTimeWins[1];
   const recentTotal = recentWins[0] + recentWins[1];
-  const seasonWinTotal = seasonCompletedWins[0] + seasonCompletedWins[1];
+  const seasonPointTotal = seasonPoints[0] + seasonPoints[1];
 
   const allTimeRateA = allTimeTotal ? allTimeWins[0] / allTimeTotal : 0.5;
   const recentRateA = recentTotal ? recentWins[0] / recentTotal : 0.5;
-  const seasonRateA = seasonWinTotal ? seasonCompletedWins[0] / seasonWinTotal : 0.5;
+  const seasonRateA = seasonPointTotal ? seasonPoints[0] / seasonPointTotal : 0.5;
 
   let matchScoreA =
     (allTimeRateA * 0.45) +
@@ -1544,7 +1609,7 @@ function computePredictionData(){
   const matchesLeftMax = Math.max(0, 10 - matchesPlayed);
 
   const seasonPositionScoreA =
-    ((seasonCompletedWins[0] - seasonCompletedWins[1]) * 0.12) +
+    ((seasonPoints[0] - seasonPoints[1]) * 0.06) +
     ((seasonUnresolvedDiff) * 0.004) +
     ((matchScoreA - 0.5) * 0.9);
 
@@ -1673,6 +1738,11 @@ function escapeHtml(str){
     .replaceAll("'","&#039;");
 }
 
+function formatSeasonPointsArray(arr){
+  const pts = Array.isArray(arr) ? arr : [0,0];
+  return `Alex ${pts[0] ?? 0} - ${pts[1] ?? 0} George`;
+}
+
 function renderAll(){
   renderSeasonScore();
   renderPredictions();
@@ -1697,10 +1767,10 @@ function renderSeasonScore(){
   const wildcardStatus = s.wildcardUsed ? "Used" : "Available";
 
   document.getElementById("seasonScore").innerText =
-    "Alex " + (s.wins?.[0] ?? 0) + " - " + (s.wins?.[1] ?? 0) + " George";
+    "Alex " + (s.seasonPoints?.[0] ?? 0) + " - " + (s.seasonPoints?.[1] ?? 0) + " George";
 
   document.getElementById("seasonMeta").innerText =
-    `Season ${data.seasons.length} • First to 5 season wins, otherwise ends after 10 matches`;
+    `Season ${data.seasons.length} • 10-match season • Highest season points wins`;
 
   document.getElementById("wildcardMeta").innerText =
     `Wildcard holder: ${holderName} • Status: ${wildcardStatus}`;
@@ -1714,7 +1784,7 @@ function renderPredictions(){
   const currentSeason = getCurrentSeason();
 
   let matchMain = "Too little data";
-  let matchSub = "Log a few completed matches and this will become more useful.";
+  let matchSub = "Log a few winner-led completed matches and this will become more useful.";
 
   if(getCompletedMatchesInStoredOrder().length > 0){
     if(p.matchProbA >= 50){
@@ -1747,7 +1817,7 @@ function renderPredictions(){
     } else {
       seasonMain = "Season looks finely balanced";
     }
-    seasonSub = `Forecast uses season position, unresolved points, and broader match form.`;
+    seasonSub = `Forecast uses season points, unresolved points, and broader match form.`;
   }
 
   document.getElementById("matchPredictionMain").textContent = matchMain;
@@ -1763,12 +1833,13 @@ function renderBios(){
 
 function renderCurrentSeasonLeaderboard(){
   const stats = calculateCurrentSeasonStats();
-  let html = "<tr><th>Player</th><th>Match Wins</th><th>Overall Pts Diff</th><th>Unresolved Pts Diff</th></tr>";
+  let html = "<tr><th>Player</th><th>Season Points</th><th>Match Wins</th><th>Overall Pts Diff</th><th>Unresolved Pts Diff</th></tr>";
 
   stats.forEach(p => {
     html += `<tr>
       <td>${p.name}</td>
-      <td>${p.matchWins}</td>
+      <td>${p.seasonPoints}</td>
+      <td>${p.completedMatchWins}</td>
       <td>${formatSigned(p.overallPointsDiff)}</td>
       <td>${formatSigned(p.unresolvedPointsDiff)}</td>
     </tr>`;
@@ -1816,7 +1887,7 @@ function renderHistory(){
     html += `<div style="margin-top:10px;">
       <b>${title}</b> ${resultBadge}
       <div class="muted" style="margin-top:4px;">
-        Result: ${resultText} • Season wins: Alex ${s.wins?.[0] ?? 0} - ${s.wins?.[1] ?? 0} George • Overall pts diff: ${formatSigned(overallPD)} • Unresolved pts diff: ${formatSigned(unresolvedPD)} • Wildcard holder: ${data.players[s.wildcardHolder]} • Wildcard used: ${s.wildcardUsed ? "Yes" : "No"}
+        Result: ${resultText} • Season points: Alex ${s.seasonPoints?.[0] ?? 0} - ${s.seasonPoints?.[1] ?? 0} George • Overall pts diff: ${formatSigned(overallPD)} • Unresolved pts diff: ${formatSigned(unresolvedPD)} • Wildcard holder: ${data.players[s.wildcardHolder]} • Wildcard used: ${s.wildcardUsed ? "Yes" : "No"}
       </div>
     </div>`;
 
@@ -1830,9 +1901,12 @@ function renderHistory(){
       const report = m.report || "";
       const gamesStr = (m.games || []).map(g => `${g.a}-${g.g}`).join(", ");
 
-      const statusBadge = m.completed
-        ? `<span class="badge badge-ok">Completed</span>`
-        : `<span class="badge badge-nr">No Result</span>`;
+      let statusBadge = `<span class="badge badge-nr">No Result</span>`;
+      if(m.completed && m.isDraw){
+        statusBadge = `<span class="badge badge-draw">2–2 Draw</span>`;
+      } else if(m.completed){
+        statusBadge = `<span class="badge badge-ok">Completed</span>`;
+      }
 
       const wildcardBadge = m.wildcardActive
         ? `<span class="badge badge-wild">Wildcard</span>`
@@ -1843,23 +1917,24 @@ function renderHistory(){
 
       const winnerText = (m.completed && (m.winner === 0 || m.winner === 1))
         ? data.players[m.winner]
-        : "N/A";
+        : (m.completed && m.isDraw ? "Draw" : "N/A");
 
       const gw = m.gameWins || [0,0];
-      const seasonWinImpact = m.completed
-        ? (m.wildcardActive ? "2 season wins to winner" : "1 season win to winner")
-        : (m.wildcardActive ? "Unresolved points count double" : "No season win awarded");
+      const seasonPointImpact = m.completed
+        ? `Season points awarded: ${formatSeasonPointsArray(m.seasonPointsAwarded)}`
+        : (m.wildcardActive ? "Unresolved points count double" : "No season points awarded");
 
       const extras = [];
       if(m.location) extras.push(`Location: ${escapeHtml(m.location)}`);
       if(m.court) extras.push(`Court: ${escapeHtml(m.court)}`);
       if(m.pints !== null && m.pints !== "" && !isNaN(m.pints)) extras.push(`Pints: ${m.pints}`);
+      if(m.tossWinner === 0 || m.tossWinner === 1) extras.push(`Toss winner: ${data.players[m.tossWinner]}`);
 
       html += `<div class="match-card">
         <div class="row">
           <div style="flex:1; min-width:0;">
             <b>Match ${mi+1}</b> ${statusBadge} ${wildcardBadge} ${editBadge}
-            <div class="muted" style="margin-top:4px;">Winner: ${winnerText} • ${when} • Games won: Alex ${gw[0]} - ${gw[1]} George • ${seasonWinImpact}</div>
+            <div class="muted" style="margin-top:4px;">Winner: ${winnerText} • ${when} • Games won: Alex ${gw[0]} - ${gw[1]} George • ${seasonPointImpact}</div>
             ${extras.length ? `<div class="meta-list">${extras.map(x => `<div>${x}</div>`).join("")}</div>` : ""}
           </div>
           <div>
@@ -1906,7 +1981,7 @@ function renderMetadataAnalytics(){
   const locationRows = computeLocationStats();
   let locationHtml = "<tr><th>Location</th><th>Alex Win %</th><th>George Win %</th><th>n</th></tr>";
   if(locationRows.length === 0){
-    locationHtml += `<tr><td colspan="4" class="muted">No completed matches with location logged yet.</td></tr>`;
+    locationHtml += `<tr><td colspan="4" class="muted">No winner-led completed matches with location logged yet.</td></tr>`;
   } else {
     locationRows.forEach(r => {
       locationHtml += `<tr>
@@ -1922,7 +1997,7 @@ function renderMetadataAnalytics(){
   const courtRows = computeCourtStats();
   let courtHtml = "<tr><th>Court</th><th>Alex Win %</th><th>George Win %</th><th>n</th></tr>";
   if(courtRows.length === 0){
-    courtHtml += `<tr><td colspan="4" class="muted">No completed matches with court logged yet.</td></tr>`;
+    courtHtml += `<tr><td colspan="4" class="muted">No winner-led completed matches with court logged yet.</td></tr>`;
   } else {
     courtRows.forEach(r => {
       courtHtml += `<tr>
@@ -2048,7 +2123,7 @@ function renderAddMatchForm(){
 
   let wildcardHolderName = currentSeason ? data.players[currentSeason.wildcardHolder] : "N/A";
   let wildcardAvailable = currentSeason && !currentSeason.wildcardUsed;
-  let wildcardHelp = `If this match is won, the winner gets <b>2 season wins</b>. If unresolved, its points count <b>double</b> for unresolved-match tiebreaks.`;
+  let wildcardHelp = `Wildcard doubles the season points awarded for this match. If the match is unresolved, its raw point difference counts double for the unresolved tiebreak.`;
 
   if(currentEdit){
     const editSeason = data.seasons?.[currentEdit.seasonIndex];
@@ -2068,7 +2143,7 @@ function renderAddMatchForm(){
     <div>George</div>
   </div>`;
 
-  for(let i=0;i<5;i++){
+  for(let i=0;i<MAX_GAMES;i++){
     html += `<div class="score-row">
       <div class="score-label">Game ${i+1}</div>
       <input id="a${i}" type="number" inputmode="numeric">
@@ -2085,6 +2160,14 @@ function renderAddMatchForm(){
     <div>
       <label class="muted">Time</label>
       <input type="time" id="matchTime">
+    </div>
+    <div>
+      <label class="muted">Toss winner (optional)</label>
+      <select id="tossWinner">
+        <option value="">Select toss winner</option>
+        <option value="0">Alex</option>
+        <option value="1">George</option>
+      </select>
     </div>
     <div>
       <label class="muted">Location (optional)</label>
@@ -2140,6 +2223,7 @@ function populateFormForEditing(match){
 
   const dateEl = document.getElementById("matchDate");
   const timeEl = document.getElementById("matchTime");
+  const tossEl = document.getElementById("tossWinner");
   const reportEl = document.getElementById("matchReport");
   const locationEl = document.getElementById("matchLocation");
   const courtEl = document.getElementById("matchCourt");
@@ -2148,6 +2232,7 @@ function populateFormForEditing(match){
 
   if(dateEl) dateEl.value = match.date || "";
   if(timeEl) timeEl.value = match.time || "";
+  if(tossEl) tossEl.value = (match.tossWinner === 0 || match.tossWinner === 1) ? String(match.tossWinner) : "";
   if(reportEl) reportEl.value = match.report || "";
   if(locationEl) locationEl.value = match.location || "";
   if(courtEl) courtEl.value = match.court || "";
@@ -2215,7 +2300,7 @@ window.cancelEdit = function(){
 
 async function saveMatchFromForm(){
   let games = [];
-  for(let i=0;i<5;i++){
+  for(let i=0;i<MAX_GAMES;i++){
     const a = parseInt(document.getElementById("a"+i).value);
     const b = parseInt(document.getElementById("b"+i).value);
     if(!isNaN(a) && !isNaN(b)){
@@ -2233,6 +2318,9 @@ async function saveMatchFromForm(){
   const report = document.getElementById("matchReport").value.trim();
   const location = document.getElementById("matchLocation").value.trim();
   const court = document.getElementById("matchCourt").value.trim();
+
+  const tossRaw = document.getElementById("tossWinner").value;
+  const tossWinner = tossRaw === "" ? null : parseInt(tossRaw, 10);
 
   const pintsRaw = document.getElementById("matchPints").value;
   const pintsParsed = parseFloat(pintsRaw);
@@ -2255,7 +2343,7 @@ async function saveMatchFromForm(){
     wildcardActive = !!(wildcardAvailable && wildcardCheckbox && wildcardCheckbox.checked);
   }
 
-  const outcome = computeMatchOutcome(games);
+  const outcome = computeMatchOutcome(games, wildcardActive);
 
   const match = {
     games,
@@ -2265,11 +2353,15 @@ async function saveMatchFromForm(){
     location,
     court,
     pints,
+    tossWinner,
     completed: outcome.completed,
     winner: outcome.winner,
+    isDraw: outcome.isDraw,
     gameWins: outcome.gameWins,
     comebackWin: outcome.comebackWin,
-    wildcardActive: wildcardActive
+    wildcardActive: wildcardActive,
+    baseSeasonPoints: outcome.baseSeasonPoints,
+    seasonPointsAwarded: outcome.seasonPoints
   };
 
   const all = flattenMatchesInStoredOrder();
