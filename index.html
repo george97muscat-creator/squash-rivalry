@@ -506,6 +506,23 @@ ul.clean-list li {
     </div>
 
     <div class="card">
+      <h2>Race to Clinch</h2>
+      <div class="smallnote">Calculated from the current points gap, matches remaining, and whether the wildcard is still unused.</div>
+      <div class="grid2">
+        <div class="pred-card">
+          <div class="pred-title">Alex</div>
+          <div class="pred-main" id="alexClinchMain">—</div>
+          <div class="pred-sub" id="alexClinchSub">—</div>
+        </div>
+        <div class="pred-card">
+          <div class="pred-title">George</div>
+          <div class="pred-main" id="georgeClinchMain">—</div>
+          <div class="pred-sub" id="georgeClinchSub">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Predictions</h2>
       <div class="smallnote">Simple forecast based on all-time completed-match form, recent completed-match form, current season form, and current season position.</div>
       <div class="grid2">
@@ -539,7 +556,7 @@ ul.clean-list li {
 
     <div class="card">
       <h2>Current Season Leaderboard</h2>
-      <div class="smallnote">Ranked by current season points. If tied after 10 matches, the tiebreak is unresolved-match point difference. If still tied, the season is a draw.</div>
+      <div class="smallnote">Ranked by current season points. If tied at season end, the tiebreak is points difference from tied matches. If still tied, the season is a draw.</div>
       <div class="tableWrap">
         <table id="seasonLeaderboard"></table>
       </div>
@@ -547,7 +564,7 @@ ul.clean-list li {
 
     <div class="card">
       <h2>All-Time Leaderboard</h2>
-      <div class="smallnote">Ordered by <b>Seasons Won</b>. Drawn seasons count as <b>0.5</b> each.</div>
+      <div class="smallnote">Ordered by <b>Season wins</b>. Drawn seasons count as <b>0.5</b> each. Match, games, and points stats only use closed matches, including 2–2 draws, and exclude partial unfinished matches.</div>
       <div class="tableWrap">
         <table id="leaderboard"></table>
       </div>
@@ -555,7 +572,7 @@ ul.clean-list li {
 
     <div class="card">
       <h2 id="formTitle">Add Match</h2>
-      <div class="smallnote">Enter each game score as <b>Alex – George</b>. A valid final match score can be <b>2–1</b>, <b>2–2</b>, <b>3-x</b>, <b>4-x</b>, or <b>5-x</b>. Wildcard doubles the season points awarded for that match. Location, court, pints, and toss winner are optional.</div>
+      <div class="smallnote">Enter each game score as <b>Alex – George</b>. A valid final match score can be <b>2–1</b>, <b>2–2</b>, <b>3-x</b>, <b>4-x</b>, or <b>5-x</b>. Wildcard doubles the season points awarded for that match. Toss and drinking fields are optional.</div>
 
       <div id="editBanner" class="edit-banner" style="display:none;"></div>
 
@@ -571,7 +588,7 @@ ul.clean-list li {
   <div id="analyticsTab" class="tab-panel">
     <div class="card">
       <h2>Streaks</h2>
-      <div class="smallnote">Win streaks count winner-led completed matches only, so 2–2 does not extend either streak.</div>
+      <div class="smallnote">Win streaks count winner-led closed matches only, so 2–2 does not extend either streak.</div>
       <div class="grid2">
         <div>
           <h3 style="margin-bottom:8px;">Alex</h3>
@@ -605,19 +622,19 @@ ul.clean-list li {
     <div class="card">
       <h2>Charts</h2>
 
-      <div class="smallnote"><b>Win % by day of week</b> (winner-led completed matches only). Labels show sample size. Bars are 0–100%.</div>
+      <div class="smallnote"><b>Win % by day of week</b> (winner-led closed matches only). Labels show sample size. Bars are 0–100%.</div>
       <canvas id="weekdayWinRateChart"></canvas>
 
       <hr>
 
-      <div class="smallnote"><b>Win % by time of day</b> (winner-led completed matches only). Buckets are based on logged match time.</div>
+      <div class="smallnote"><b>Win % by time of day</b> (winner-led closed matches only). Buckets are based on logged match time.</div>
       <canvas id="timeOfDayWinRateChart"></canvas>
 
       <hr>
 
       <div class="grid2">
         <div>
-          <div class="smallnote"><b>Comeback Match Wins (count)</b>: completed matches won after trailing by 1+ games at some point.</div>
+          <div class="smallnote"><b>Comeback Match Wins (count)</b>: closed matches won after trailing by 1+ games at some point.</div>
           <canvas id="comebackMatchChart"></canvas>
         </div>
         <div>
@@ -629,7 +646,7 @@ ul.clean-list li {
 
     <div class="card">
       <h2>Metadata Analytics</h2>
-      <div class="smallnote">These use winner-led completed matches where the relevant field is present. Old matches without location, court, pints, or toss winner are ignored for those specific views.</div>
+      <div class="smallnote">These use winner-led closed matches where the relevant field is present. Old matches without metadata are ignored for those specific views.</div>
 
       <div class="grid2" style="margin-top:12px;">
         <div>
@@ -699,7 +716,7 @@ ul.clean-list li {
   <div id="historyTab" class="tab-panel">
     <div class="card">
       <h2>Match History</h2>
-      <div class="muted">Tip: editing or deleting a match recalculates seasons, wildcard holders, and all stats.</div>
+      <div class="muted">Tip: editing or deleting a match recalculates seasons, wildcard holders, clinch state, and all stats.</div>
       <div id="history"></div>
     </div>
   </div>
@@ -731,6 +748,7 @@ const ALLOWED_EMAILS = [
 ];
 
 const MAX_GAMES = 9;
+const MAX_MATCHES_PER_SEASON = 10;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -836,16 +854,22 @@ function clearMatchEntryFormFields(){
   const report = document.getElementById("matchReport");
   const location = document.getElementById("matchLocation");
   const court = document.getElementById("matchCourt");
-  const pints = document.getElementById("matchPints");
+  const pintsAfter = document.getElementById("matchPints");
+  const pintsPrev = document.getElementById("matchPintsPrevNight");
   const wild = document.getElementById("wildcardActive");
-  const toss = document.getElementById("tossWinner");
+  const tossCaller = document.getElementById("tossCaller");
+  const tossCall = document.getElementById("tossCall");
+  const tossWinner = document.getElementById("tossWinner");
 
   if(report) report.value = "";
   if(location) location.value = "";
   if(court) court.value = "";
-  if(pints) pints.value = "";
+  if(pintsAfter) pintsAfter.value = "";
+  if(pintsPrev) pintsPrev.value = "";
   if(wild) wild.checked = false;
-  if(toss) toss.value = "";
+  if(tossCaller) tossCaller.value = "";
+  if(tossCall) tossCall.value = "";
+  if(tossWinner) tossWinner.value = "";
 }
 
 function resetMatchEntryForm(){
@@ -914,11 +938,23 @@ function flattenMatchesInStoredOrderFromExistingData(existingData){
   return all;
 }
 
-function getCompletedMatchesInStoredOrder(){
+function getWinnerLedClosedMatchesInStoredOrder(){
   const all = [];
   data.seasons.forEach(season => {
     (season.matches || []).forEach(match => {
       if(match && match.completed && (match.winner === 0 || match.winner === 1)){
+        all.push(match);
+      }
+    });
+  });
+  return all;
+}
+
+function getClosedMatchesInStoredOrder(){
+  const all = [];
+  data.seasons.forEach(season => {
+    (season.matches || []).forEach(match => {
+      if(match && match.completed){
         all.push(match);
       }
     });
@@ -1032,8 +1068,15 @@ function getRawMatchPointDiff(match){
   return diff;
 }
 
-function getWeightedUnresolvedPointDiff(match){
-  if(!match || match.completed) return 0;
+function isTiedMatchForTiebreak(match){
+  if(!match) return false;
+  const gw = Array.isArray(match.gameWins) ? match.gameWins : [0,0];
+  const totalGamesWon = (gw[0] || 0) + (gw[1] || 0);
+  return totalGamesWon > 0 && gw[0] === gw[1] && match.winner === null;
+}
+
+function getWeightedTiedMatchPointDiff(match){
+  if(!isTiedMatchForTiebreak(match)) return 0;
   const raw = getRawMatchPointDiff(match);
   return raw * (match.wildcardActive ? 2 : 1);
 }
@@ -1042,19 +1085,15 @@ function getSeasonOverallPointDiff(season){
   let diff = 0;
   (season.matches || []).forEach(m => {
     if(!m) return;
-    if(m.completed){
-      diff += getRawMatchPointDiff(m);
-    } else {
-      diff += getWeightedUnresolvedPointDiff(m);
-    }
+    diff += getRawMatchPointDiff(m);
   });
   return diff;
 }
 
-function getSeasonUnresolvedPointDiff(season){
+function getSeasonTiedMatchPointDiff(season){
   let diff = 0;
   (season.matches || []).forEach(m => {
-    diff += getWeightedUnresolvedPointDiff(m);
+    diff += getWeightedTiedMatchPointDiff(m);
   });
   return diff;
 }
@@ -1067,9 +1106,62 @@ function createEmptySeason(seasonIndex){
     winner: null,
     isDraw: false,
     finished: false,
+    clinchedEarly: false,
     wildcardHolder: holder,
     wildcardUsed: false
   };
+}
+
+function computeMaxRemainingSwing(remainingMatches, wildcardStillAvailable){
+  if(remainingMatches <= 0) return 0;
+  const wildcardSwing = wildcardStillAvailable ? 10 : 0;
+  const normalMatches = remainingMatches - (wildcardStillAvailable ? 1 : 0);
+  return wildcardSwing + (Math.max(0, normalMatches) * 5);
+}
+
+function canSeasonBeClinchedEarly(season){
+  if(!season || season.finished) return false;
+
+  const matchesPlayed = (season.matches || []).length;
+  const remainingMatches = MAX_MATCHES_PER_SEASON - matchesPlayed;
+  if(remainingMatches <= 0) return false;
+
+  const gap = Math.abs((season.seasonPoints?.[0] ?? 0) - (season.seasonPoints?.[1] ?? 0));
+  const wildcardStillAvailable = !season.wildcardUsed;
+  const maxSwingRemaining = computeMaxRemainingSwing(remainingMatches, wildcardStillAvailable);
+
+  return gap > maxSwingRemaining;
+}
+
+function finishSeasonByCurrentLeader(season){
+  season.finished = true;
+  season.clinchedEarly = true;
+  season.isDraw = false;
+  season.winner = (season.seasonPoints[0] > season.seasonPoints[1]) ? 0 : 1;
+}
+
+function finishSeasonAtNaturalEnd(season){
+  season.finished = true;
+
+  if(season.seasonPoints[0] > season.seasonPoints[1]){
+    season.winner = 0;
+    season.isDraw = false;
+  } else if(season.seasonPoints[1] > season.seasonPoints[0]){
+    season.winner = 1;
+    season.isDraw = false;
+  } else {
+    const tiedDiff = getSeasonTiedMatchPointDiff(season);
+    if(tiedDiff > 0){
+      season.winner = 0;
+      season.isDraw = false;
+    } else if(tiedDiff < 0){
+      season.winner = 1;
+      season.isDraw = false;
+    } else {
+      season.winner = null;
+      season.isDraw = true;
+    }
+  }
 }
 
 /* ---------- SEASON REBUILD ---------- */
@@ -1082,6 +1174,16 @@ function rebuildSeasonsFromMatches(allMatches){
     const wildcardActive = !!originalMatch.wildcardActive;
     const games = Array.isArray(originalMatch.games) ? originalMatch.games : [];
     const outcome = computeMatchOutcome(games, wildcardActive);
+
+    const tossCaller =
+      (originalMatch.tossCaller === 0 || originalMatch.tossCaller === 1)
+        ? originalMatch.tossCaller
+        : null;
+
+    const tossCall =
+      (originalMatch.tossCall === "heads" || originalMatch.tossCall === "tails")
+        ? originalMatch.tossCall
+        : "";
 
     const tossWinner =
       (originalMatch.tossWinner === 0 || originalMatch.tossWinner === 1)
@@ -1096,6 +1198,9 @@ function rebuildSeasonsFromMatches(allMatches){
       location: originalMatch.location || "",
       court: originalMatch.court || "",
       pints: (typeof originalMatch.pints === "number" && !isNaN(originalMatch.pints)) ? originalMatch.pints : null,
+      pintsPrevNight: (typeof originalMatch.pintsPrevNight === "number" && !isNaN(originalMatch.pintsPrevNight)) ? originalMatch.pintsPrevNight : null,
+      tossCaller,
+      tossCall,
       tossWinner,
       completed: outcome.completed,
       winner: (outcome.winner === 0 || outcome.winner === 1) ? outcome.winner : null,
@@ -1118,25 +1223,16 @@ function rebuildSeasonsFromMatches(allMatches){
       current.seasonPoints[1] += match.seasonPointsAwarded[1];
     }
 
-    if(current.matches.length >= 10){
-      current.finished = true;
+    if(canSeasonBeClinchedEarly(current)){
+      finishSeasonByCurrentLeader(current);
+      seasons.push(current);
+      seasonIndex++;
+      current = createEmptySeason(seasonIndex);
+      continue;
+    }
 
-      if(current.seasonPoints[0] > current.seasonPoints[1]){
-        current.winner = 0;
-      } else if(current.seasonPoints[1] > current.seasonPoints[0]){
-        current.winner = 1;
-      } else {
-        const unresolvedDiff = getSeasonUnresolvedPointDiff(current);
-        if(unresolvedDiff > 0){
-          current.winner = 0;
-        } else if(unresolvedDiff < 0){
-          current.winner = 1;
-        } else {
-          current.winner = null;
-          current.isDraw = true;
-        }
-      }
-
+    if(current.matches.length >= MAX_MATCHES_PER_SEASON){
+      finishSeasonAtNaturalEnd(current);
       seasons.push(current);
       seasonIndex++;
       current = createEmptySeason(seasonIndex);
@@ -1154,50 +1250,44 @@ function getCurrentSeason(){
 /* ---------- STATS ---------- */
 function calculateRawAllTimeStats(){
   let stats = [
-    {name:"Alex", seasons:0, completedMatches:0, gamesWon:0, gamesLost:0, gameDiff:0, pointsDiff:0},
-    {name:"George", seasons:0, completedMatches:0, gamesWon:0, gamesLost:0, gameDiff:0, pointsDiff:0}
+    {name:"Alex", seasonWins:0, matchesWon:0, matchesLost:0, gamesWon:0, gamesLost:0, gameDiff:0, pointsDiff:0},
+    {name:"George", seasonWins:0, matchesWon:0, matchesLost:0, gamesWon:0, gamesLost:0, gameDiff:0, pointsDiff:0}
   ];
 
   data.seasons.forEach(s => {
     if(s.finished){
       if(s.isDraw){
-        stats[0].seasons += 0.5;
-        stats[1].seasons += 0.5;
+        stats[0].seasonWins += 0.5;
+        stats[1].seasonWins += 0.5;
       } else if(s.winner === 0 || s.winner === 1){
-        stats[s.winner].seasons += 1;
+        stats[s.winner].seasonWins += 1;
       }
     }
 
     (s.matches || []).forEach(m => {
-      if(!m) return;
+      if(!m || !m.completed) return;
 
-      if(m.completed && (m.winner === 0 || m.winner === 1)){
-        stats[m.winner].completedMatches += 1;
+      if(m.winner === 0 || m.winner === 1){
+        stats[m.winner].matchesWon += 1;
+        stats[1 - m.winner].matchesLost += 1;
       }
 
-      if(m.completed){
-        (m.games || []).forEach(g => {
-          const w = getValidGameWinner(g.a, g.g);
-          if(w === null) return;
+      (m.games || []).forEach(g => {
+        const w = getValidGameWinner(g.a, g.g);
+        if(w === null) return;
 
-          if(g.a > g.g){
-            stats[0].gamesWon += 1;
-            stats[1].gamesLost += 1;
-          } else if(g.g > g.a){
-            stats[1].gamesWon += 1;
-            stats[0].gamesLost += 1;
-          }
-        });
-      }
+        if(g.a > g.g){
+          stats[0].gamesWon += 1;
+          stats[1].gamesLost += 1;
+        } else if(g.g > g.a){
+          stats[1].gamesWon += 1;
+          stats[0].gamesLost += 1;
+        }
+      });
 
-      if(m.completed){
-        stats[0].pointsDiff += getRawMatchPointDiff(m);
-        stats[1].pointsDiff -= getRawMatchPointDiff(m);
-      } else {
-        const weighted = getWeightedUnresolvedPointDiff(m);
-        stats[0].pointsDiff += weighted;
-        stats[1].pointsDiff -= weighted;
-      }
+      const raw = getRawMatchPointDiff(m);
+      stats[0].pointsDiff += raw;
+      stats[1].pointsDiff -= raw;
     });
   });
 
@@ -1210,8 +1300,9 @@ function calculateRawAllTimeStats(){
 
 function calculateAllTimeStats(){
   return [...calculateRawAllTimeStats()].sort((a,b) => {
-    if(b.seasons !== a.seasons) return b.seasons - a.seasons;
-    if(b.completedMatches !== a.completedMatches) return b.completedMatches - a.completedMatches;
+    if(b.seasonWins !== a.seasonWins) return b.seasonWins - a.seasonWins;
+    if(b.matchesWon !== a.matchesWon) return b.matchesWon - a.matchesWon;
+    if(a.matchesLost !== b.matchesLost) return a.matchesLost - b.matchesLost;
     if(b.gameDiff !== a.gameDiff) return b.gameDiff - a.gameDiff;
     return b.pointsDiff - a.pointsDiff;
   });
@@ -1234,7 +1325,7 @@ function calculateCurrentSeasonStats(){
       seasonPoints: s.seasonPoints?.[0] ?? 0,
       completedMatchWins: completedMatchWins[0],
       overallPointsDiff: getSeasonOverallPointDiff(s),
-      unresolvedPointsDiff: getSeasonUnresolvedPointDiff(s)
+      tiedMatchPointsDiff: getSeasonTiedMatchPointDiff(s)
     },
     {
       playerIndex: 1,
@@ -1242,18 +1333,71 @@ function calculateCurrentSeasonStats(){
       seasonPoints: s.seasonPoints?.[1] ?? 0,
       completedMatchWins: completedMatchWins[1],
       overallPointsDiff: -getSeasonOverallPointDiff(s),
-      unresolvedPointsDiff: -getSeasonUnresolvedPointDiff(s)
+      tiedMatchPointsDiff: -getSeasonTiedMatchPointDiff(s)
     }
   ];
 
   rows.sort((a,b) => {
     if(b.seasonPoints !== a.seasonPoints) return b.seasonPoints - a.seasonPoints;
-    if(b.unresolvedPointsDiff !== a.unresolvedPointsDiff) return b.unresolvedPointsDiff - a.unresolvedPointsDiff;
+    if(b.tiedMatchPointsDiff !== a.tiedMatchPointsDiff) return b.tiedMatchPointsDiff - a.tiedMatchPointsDiff;
     if(b.completedMatchWins !== a.completedMatchWins) return b.completedMatchWins - a.completedMatchWins;
     return b.overallPointsDiff - a.overallPointsDiff;
   });
 
   return rows;
+}
+
+function computeRaceToClinch(){
+  const season = getCurrentSeason();
+  if(!season || season.finished){
+    return {
+      alexText: season?.isDraw ? "Season drawn" : (season?.winner === 0 ? "Clinched" : "Eliminated"),
+      alexSub: season?.isDraw ? "No one clinched the season." : (season?.winner === 0 ? "Alex has already clinched the season." : "Alex cannot win this season."),
+      georgeText: season?.isDraw ? "Season drawn" : (season?.winner === 1 ? "Clinched" : "Eliminated"),
+      georgeSub: season?.isDraw ? "No one clinched the season." : (season?.winner === 1 ? "George has already clinched the season." : "George cannot win this season.")
+    };
+  }
+
+  const matchesPlayed = (season.matches || []).length;
+  const remainingMatches = MAX_MATCHES_PER_SEASON - matchesPlayed;
+  const wildcardStillAvailable = !season.wildcardUsed;
+
+  function minExtraPointsToClinch(playerIndex){
+    const me = season.seasonPoints[playerIndex] ?? 0;
+    const them = season.seasonPoints[1 - playerIndex] ?? 0;
+
+    if(me > them + computeMaxRemainingSwing(remainingMatches, wildcardStillAvailable)){
+      return 0;
+    }
+
+    for(let extra = 0; extra <= 100; extra++){
+      const remainingSwingAfterMyExtra = computeMaxRemainingSwing(remainingMatches, wildcardStillAvailable);
+      if((me + extra) > (them + remainingSwingAfterMyExtra)){
+        return extra;
+      }
+    }
+
+    return null;
+  }
+
+  const alexNeed = minExtraPointsToClinch(0);
+  const georgeNeed = minExtraPointsToClinch(1);
+  const maxSwingRemaining = computeMaxRemainingSwing(remainingMatches, wildcardStillAvailable);
+
+  return {
+    alexText: alexNeed === 0 ? "Clinched" : (alexNeed === null ? "Not yet clinchable" : `${alexNeed} more`),
+    alexSub: alexNeed === 0
+      ? "Alex has already clinched the season."
+      : (alexNeed === null
+        ? `Season still live. Max swing remaining is ${maxSwingRemaining}${wildcardStillAvailable ? " with wildcard still available" : ""}.`
+        : `Alex needs ${alexNeed} more season point${alexNeed === 1 ? "" : "s"} to guarantee the season.`),
+    georgeText: georgeNeed === 0 ? "Clinched" : (georgeNeed === null ? "Not yet clinchable" : `${georgeNeed} more`),
+    georgeSub: georgeNeed === 0
+      ? "George has already clinched the season."
+      : (georgeNeed === null
+        ? `Season still live. Max swing remaining is ${maxSwingRemaining}${wildcardStillAvailable ? " with wildcard still available" : ""}.`
+        : `George needs ${georgeNeed} more season point${georgeNeed === 1 ? "" : "s"} to guarantee the season.`)
+  };
 }
 
 /* ---------- ANALYTICS ---------- */
@@ -1367,7 +1511,7 @@ function computeComebackSeasonWinCounts(){
 }
 
 function computeStreakStats(){
-  const matches = getCompletedMatchesInStoredOrder();
+  const matches = getWinnerLedClosedMatchesInStoredOrder();
 
   const current = [0,0];
   const longest = [0,0];
@@ -1413,7 +1557,7 @@ function computeStreakStats(){
 function computeLocationStats(){
   const bucketMap = new Map();
 
-  getCompletedMatchesInStoredOrder().forEach(m => {
+  getWinnerLedClosedMatchesInStoredOrder().forEach(m => {
     const location = titleCaseLoose(m.location);
     if(!location) return;
 
@@ -1433,7 +1577,7 @@ function computeLocationStats(){
 function computeCourtStats(){
   const bucketMap = new Map();
 
-  getCompletedMatchesInStoredOrder().forEach(m => {
+  getWinnerLedClosedMatchesInStoredOrder().forEach(m => {
     const court = titleCaseLoose(m.court);
     if(!court) return;
 
@@ -1461,7 +1605,7 @@ function computePintsBucketStats(){
   const labels = ["0","0.5–1.5","2+"];
   const rows = labels.map(label => ({ label, wins:[0,0], total:0 }));
 
-  getCompletedMatchesInStoredOrder().forEach(m => {
+  getWinnerLedClosedMatchesInStoredOrder().forEach(m => {
     const bucket = getPintsBucket(m.pints);
     if(!bucket) return;
     const row = rows.find(r => r.label === bucket);
@@ -1478,7 +1622,7 @@ function computeAveragePintsStats(){
   const georgeWins = [];
   const georgeLosses = [];
 
-  getCompletedMatchesInStoredOrder().forEach(m => {
+  getWinnerLedClosedMatchesInStoredOrder().forEach(m => {
     if(typeof m.pints !== "number" || isNaN(m.pints)) return;
 
     if(m.winner === 0){
@@ -1499,7 +1643,7 @@ function computeAveragePintsStats(){
 }
 
 function computeFunSummary(){
-  const completed = getCompletedMatchesInStoredOrder();
+  const completed = getWinnerLedClosedMatchesInStoredOrder();
   const streaks = computeStreakStats();
   const locationRows = computeLocationStats();
   const courtRows = computeCourtStats();
@@ -1509,7 +1653,7 @@ function computeFunSummary(){
   const meta = [];
 
   if(completed.length === 0){
-    clutch.push("No winner-led completed matches yet.");
+    clutch.push("No winner-led closed matches yet.");
     meta.push("Log a few matches with metadata to unlock the fun stuff.");
     return { clutch, meta };
   }
@@ -1540,7 +1684,7 @@ function computeFunSummary(){
   }
 
   if(locationRows.length){
-    meta.push(`Most-played venue: ${locationRows[0].label} (${locationRows[0].total} winner-led completed matches).`);
+    meta.push(`Most-played venue: ${locationRows[0].label} (${locationRows[0].total} winner-led closed matches).`);
   } else {
     meta.push(`No venue trend yet — location data needs more matches.`);
   }
@@ -1563,7 +1707,7 @@ function computeFunSummary(){
 
 /* ---------- PREDICTIONS ---------- */
 function computePredictionData(){
-  const completed = getCompletedMatchesInStoredOrder();
+  const completed = getWinnerLedClosedMatchesInStoredOrder();
   const recent = completed.slice(-6);
   const currentSeason = getCurrentSeason();
 
@@ -1578,7 +1722,7 @@ function computePredictionData(){
   });
 
   const seasonPoints = [...(currentSeason.seasonPoints || [0,0])];
-  const seasonUnresolvedDiff = getSeasonUnresolvedPointDiff(currentSeason);
+  const seasonTiedDiff = getSeasonTiedMatchPointDiff(currentSeason);
 
   const allTimeTotal = allTimeWins[0] + allTimeWins[1];
   const recentTotal = recentWins[0] + recentWins[1];
@@ -1606,11 +1750,11 @@ function computePredictionData(){
   if(matchProbA > 35 && matchProbA < 50) projectedScore = "George 3–2 Alex";
 
   const matchesPlayed = (currentSeason.matches || []).length;
-  const matchesLeftMax = Math.max(0, 10 - matchesPlayed);
+  const matchesLeftMax = Math.max(0, MAX_MATCHES_PER_SEASON - matchesPlayed);
 
   const seasonPositionScoreA =
     ((seasonPoints[0] - seasonPoints[1]) * 0.06) +
-    ((seasonUnresolvedDiff) * 0.004) +
+    (seasonTiedDiff * 0.004) +
     ((matchScoreA - 0.5) * 0.9);
 
   let seasonProbA = clamp(0.5 + seasonPositionScoreA, 0.10, 0.90);
@@ -1669,15 +1813,15 @@ function buildPlayerBio(playerIndex){
 
   const me = rawStats[playerIndex];
   const opp = rawStats[1 - playerIndex];
-  const totalCompleted = me.completedMatches + opp.completedMatches;
-  const winRate = totalCompleted ? me.completedMatches / totalCompleted : 0.5;
-  const comebackRate = me.completedMatches ? comebacks[playerIndex] / me.completedMatches : 0;
+  const totalWinnerLed = me.matchesWon + opp.matchesWon;
+  const winRate = totalWinnerLed ? me.matchesWon / totalWinnerLed : 0.5;
+  const comebackRate = me.matchesWon ? comebacks[playerIndex] / me.matchesWon : 0;
 
   const currentStreak = playerIndex === 0 ? streaks.alexCurrent : streaks.georgeCurrent;
   const longestStreak = playerIndex === 0 ? streaks.alexLongest : streaks.georgeLongest;
 
   let opening = "";
-  if(totalCompleted < 4){
+  if(totalWinnerLed < 4){
     opening = `${me.name} is still in the data-gathering stage, so the profile is tentative.`;
   } else if(winRate >= 0.6){
     opening = `${me.name} currently looks like the stronger long-run performer in this rivalry.`;
@@ -1699,7 +1843,7 @@ function buildPlayerBio(playerIndex){
   let clutch = "";
   if(comebackRate >= 0.3){
     clutch = `There is a noticeable comeback streak in the data too, which points to resilience when matches start going sideways.`;
-  } else if(me.completedMatches >= 3 && comebackRate === 0){
+  } else if(me.matchesWon >= 3 && comebackRate === 0){
     clutch = `Most wins have come from getting on top early rather than mounting dramatic recoveries.`;
   } else {
     clutch = `The comeback picture is mixed so far, with not quite enough evidence to call it a defining trait.`;
@@ -1745,6 +1889,7 @@ function formatSeasonPointsArray(arr){
 
 function renderAll(){
   renderSeasonScore();
+  renderRaceToClinch();
   renderPredictions();
   renderBios();
   renderCurrentSeasonLeaderboard();
@@ -1770,13 +1915,21 @@ function renderSeasonScore(){
     "Alex " + (s.seasonPoints?.[0] ?? 0) + " - " + (s.seasonPoints?.[1] ?? 0) + " George";
 
   document.getElementById("seasonMeta").innerText =
-    `Season ${data.seasons.length} • 10-match season • Highest season points wins`;
+    `Season ${data.seasons.length} • Up to ${MAX_MATCHES_PER_SEASON} matches • Ends early if mathematically clinched`;
 
   document.getElementById("wildcardMeta").innerText =
     `Wildcard holder: ${holderName} • Status: ${wildcardStatus}`;
 
-  document.getElementById("matchesPlayedKpi").textContent = `${matchesPlayed}/10`;
+  document.getElementById("matchesPlayedKpi").textContent = `${matchesPlayed}/${MAX_MATCHES_PER_SEASON}`;
   document.getElementById("wildcardKpi").textContent = `${holderName} • ${wildcardStatus}`;
+}
+
+function renderRaceToClinch(){
+  const race = computeRaceToClinch();
+  document.getElementById("alexClinchMain").textContent = race.alexText;
+  document.getElementById("alexClinchSub").textContent = race.alexSub;
+  document.getElementById("georgeClinchMain").textContent = race.georgeText;
+  document.getElementById("georgeClinchSub").textContent = race.georgeSub;
 }
 
 function renderPredictions(){
@@ -1784,9 +1937,9 @@ function renderPredictions(){
   const currentSeason = getCurrentSeason();
 
   let matchMain = "Too little data";
-  let matchSub = "Log a few winner-led completed matches and this will become more useful.";
+  let matchSub = "Log a few winner-led closed matches and this will become more useful.";
 
-  if(getCompletedMatchesInStoredOrder().length > 0){
+  if(getWinnerLedClosedMatchesInStoredOrder().length > 0){
     if(p.matchProbA >= 50){
       matchMain = `Alex favoured (${p.matchProbA}%)`;
     } else {
@@ -1804,10 +1957,10 @@ function renderPredictions(){
       seasonSub = "Both players receive 0.5 of a season win.";
     } else if(currentSeason.winner === 0){
       seasonMain = "Alex has won the season";
-      seasonSub = "Season complete.";
+      seasonSub = currentSeason.clinchedEarly ? "Season clinched early." : "Season complete.";
     } else if(currentSeason.winner === 1){
       seasonMain = "George has won the season";
-      seasonSub = "Season complete.";
+      seasonSub = currentSeason.clinchedEarly ? "Season clinched early." : "Season complete.";
     }
   } else {
     if(p.seasonProbA >= 55){
@@ -1817,7 +1970,7 @@ function renderPredictions(){
     } else {
       seasonMain = "Season looks finely balanced";
     }
-    seasonSub = `Forecast uses season points, unresolved points, and broader match form.`;
+    seasonSub = `Forecast uses season points, tied-match tiebreak pressure, and broader match form.`;
   }
 
   document.getElementById("matchPredictionMain").textContent = matchMain;
@@ -1833,7 +1986,7 @@ function renderBios(){
 
 function renderCurrentSeasonLeaderboard(){
   const stats = calculateCurrentSeasonStats();
-  let html = "<tr><th>Player</th><th>Season Points</th><th>Match Wins</th><th>Overall Pts Diff</th><th>Unresolved Pts Diff</th></tr>";
+  let html = "<tr><th>Player</th><th>Season Pts</th><th>Matches Won</th><th>Overall Pts Diff</th><th>Pts Diff from Tied Matches</th></tr>";
 
   stats.forEach(p => {
     html += `<tr>
@@ -1841,7 +1994,7 @@ function renderCurrentSeasonLeaderboard(){
       <td>${p.seasonPoints}</td>
       <td>${p.completedMatchWins}</td>
       <td>${formatSigned(p.overallPointsDiff)}</td>
-      <td>${formatSigned(p.unresolvedPointsDiff)}</td>
+      <td>${formatSigned(p.tiedMatchPointsDiff)}</td>
     </tr>`;
   });
 
@@ -1850,13 +2003,14 @@ function renderCurrentSeasonLeaderboard(){
 
 function renderAllTimeLeaderboard(){
   const stats = calculateAllTimeStats();
-  let html="<tr><th>Player</th><th>Seasons</th><th>Completed Matches</th><th>Game Diff</th><th>Overall Pts Diff</th></tr>";
+  let html="<tr><th>Player</th><th>Season Wins</th><th>Matches Won</th><th>Matches Lost</th><th>Overall Games Diff</th><th>Overall Points Diff</th></tr>";
 
   stats.forEach(p => {
     html += `<tr>
       <td>${p.name}</td>
-      <td>${formatNumberMaybeHalf(p.seasons)}</td>
-      <td>${p.completedMatches}</td>
+      <td>${formatNumberMaybeHalf(p.seasonWins)}</td>
+      <td>${p.matchesWon}</td>
+      <td>${p.matchesLost}</td>
       <td>${formatSigned(p.gameDiff)}</td>
       <td>${formatSigned(p.pointsDiff)}</td>
     </tr>`;
@@ -1878,16 +2032,16 @@ function renderHistory(){
       resultText = "Draw";
       resultBadge = `<span class="badge badge-draw">Draw</span>`;
     } else if(s.finished && (s.winner === 0 || s.winner === 1)){
-      resultText = `${data.players[s.winner]} won`;
+      resultText = `${data.players[s.winner]} won${s.clinchedEarly ? " (clinched early)" : ""}`;
     }
 
     const overallPD = getSeasonOverallPointDiff(s);
-    const unresolvedPD = getSeasonUnresolvedPointDiff(s);
+    const tiedPD = getSeasonTiedMatchPointDiff(s);
 
     html += `<div style="margin-top:10px;">
       <b>${title}</b> ${resultBadge}
       <div class="muted" style="margin-top:4px;">
-        Result: ${resultText} • Season points: Alex ${s.seasonPoints?.[0] ?? 0} - ${s.seasonPoints?.[1] ?? 0} George • Overall pts diff: ${formatSigned(overallPD)} • Unresolved pts diff: ${formatSigned(unresolvedPD)} • Wildcard holder: ${data.players[s.wildcardHolder]} • Wildcard used: ${s.wildcardUsed ? "Yes" : "No"}
+        Result: ${resultText} • Season points: Alex ${s.seasonPoints?.[0] ?? 0} - ${s.seasonPoints?.[1] ?? 0} George • Overall pts diff: ${formatSigned(overallPD)} • Pts diff from tied matches: ${formatSigned(tiedPD)} • Wildcard holder: ${data.players[s.wildcardHolder]} • Wildcard used: ${s.wildcardUsed ? "Yes" : "No"}
       </div>
     </div>`;
 
@@ -1903,7 +2057,7 @@ function renderHistory(){
 
       let statusBadge = `<span class="badge badge-nr">No Result</span>`;
       if(m.completed && m.isDraw){
-        statusBadge = `<span class="badge badge-draw">2–2 Draw</span>`;
+        statusBadge = `<span class="badge badge-draw">Draw</span>`;
       } else if(m.completed){
         statusBadge = `<span class="badge badge-ok">Completed</span>`;
       }
@@ -1922,12 +2076,15 @@ function renderHistory(){
       const gw = m.gameWins || [0,0];
       const seasonPointImpact = m.completed
         ? `Season points awarded: ${formatSeasonPointsArray(m.seasonPointsAwarded)}`
-        : (m.wildcardActive ? "Unresolved points count double" : "No season points awarded");
+        : (m.wildcardActive ? "No season points yet • wildcard still doubles tied-match pressure" : "No season points awarded");
 
       const extras = [];
       if(m.location) extras.push(`Location: ${escapeHtml(m.location)}`);
       if(m.court) extras.push(`Court: ${escapeHtml(m.court)}`);
-      if(m.pints !== null && m.pints !== "" && !isNaN(m.pints)) extras.push(`Pints: ${m.pints}`);
+      if(m.pints !== null && m.pints !== "" && !isNaN(m.pints)) extras.push(`Pints after: ${m.pints}`);
+      if(m.pintsPrevNight !== null && m.pintsPrevNight !== "" && !isNaN(m.pintsPrevNight)) extras.push(`Pints previous night: ${m.pintsPrevNight}`);
+      if(m.tossCaller === 0 || m.tossCaller === 1) extras.push(`Toss caller: ${data.players[m.tossCaller]}`);
+      if(m.tossCall) extras.push(`Toss call: ${escapeHtml(m.tossCall)}`);
       if(m.tossWinner === 0 || m.tossWinner === 1) extras.push(`Toss winner: ${data.players[m.tossWinner]}`);
 
       html += `<div class="match-card">
@@ -1981,7 +2138,7 @@ function renderMetadataAnalytics(){
   const locationRows = computeLocationStats();
   let locationHtml = "<tr><th>Location</th><th>Alex Win %</th><th>George Win %</th><th>n</th></tr>";
   if(locationRows.length === 0){
-    locationHtml += `<tr><td colspan="4" class="muted">No winner-led completed matches with location logged yet.</td></tr>`;
+    locationHtml += `<tr><td colspan="4" class="muted">No winner-led closed matches with location logged yet.</td></tr>`;
   } else {
     locationRows.forEach(r => {
       locationHtml += `<tr>
@@ -1997,7 +2154,7 @@ function renderMetadataAnalytics(){
   const courtRows = computeCourtStats();
   let courtHtml = "<tr><th>Court</th><th>Alex Win %</th><th>George Win %</th><th>n</th></tr>";
   if(courtRows.length === 0){
-    courtHtml += `<tr><td colspan="4" class="muted">No winner-led completed matches with court logged yet.</td></tr>`;
+    courtHtml += `<tr><td colspan="4" class="muted">No winner-led closed matches with court logged yet.</td></tr>`;
   } else {
     courtRows.forEach(r => {
       courtHtml += `<tr>
@@ -2123,7 +2280,7 @@ function renderAddMatchForm(){
 
   let wildcardHolderName = currentSeason ? data.players[currentSeason.wildcardHolder] : "N/A";
   let wildcardAvailable = currentSeason && !currentSeason.wildcardUsed;
-  let wildcardHelp = `Wildcard doubles the season points awarded for this match. If the match is unresolved, its raw point difference counts double for the unresolved tiebreak.`;
+  let wildcardHelp = `Wildcard doubles the season points awarded for this match. For tied unfinished matches, it also doubles the tied-match tiebreak contribution.`;
 
   if(currentEdit){
     const editSeason = data.seasons?.[currentEdit.seasonIndex];
@@ -2162,6 +2319,22 @@ function renderAddMatchForm(){
       <input type="time" id="matchTime">
     </div>
     <div>
+      <label class="muted">Toss caller (optional)</label>
+      <select id="tossCaller">
+        <option value="">Select caller</option>
+        <option value="0">Alex</option>
+        <option value="1">George</option>
+      </select>
+    </div>
+    <div>
+      <label class="muted">Toss call (optional)</label>
+      <select id="tossCall">
+        <option value="">Select call</option>
+        <option value="heads">Heads</option>
+        <option value="tails">Tails</option>
+      </select>
+    </div>
+    <div>
       <label class="muted">Toss winner (optional)</label>
       <select id="tossWinner">
         <option value="">Select toss winner</option>
@@ -2176,6 +2349,10 @@ function renderAddMatchForm(){
     <div>
       <label class="muted">Court (optional)</label>
       <input type="text" id="matchCourt" placeholder="e.g. Court 2">
+    </div>
+    <div>
+      <label class="muted">Pints previous night (optional)</label>
+      <input type="number" step="0.5" min="0" id="matchPintsPrevNight" placeholder="e.g. 3">
     </div>
     <div>
       <label class="muted">Pints after match (optional)</label>
@@ -2223,19 +2400,25 @@ function populateFormForEditing(match){
 
   const dateEl = document.getElementById("matchDate");
   const timeEl = document.getElementById("matchTime");
-  const tossEl = document.getElementById("tossWinner");
+  const tossCallerEl = document.getElementById("tossCaller");
+  const tossCallEl = document.getElementById("tossCall");
+  const tossWinnerEl = document.getElementById("tossWinner");
   const reportEl = document.getElementById("matchReport");
   const locationEl = document.getElementById("matchLocation");
   const courtEl = document.getElementById("matchCourt");
+  const pintsPrevEl = document.getElementById("matchPintsPrevNight");
   const pintsEl = document.getElementById("matchPints");
   const wildEl = document.getElementById("wildcardActive");
 
   if(dateEl) dateEl.value = match.date || "";
   if(timeEl) timeEl.value = match.time || "";
-  if(tossEl) tossEl.value = (match.tossWinner === 0 || match.tossWinner === 1) ? String(match.tossWinner) : "";
+  if(tossCallerEl) tossCallerEl.value = (match.tossCaller === 0 || match.tossCaller === 1) ? String(match.tossCaller) : "";
+  if(tossCallEl) tossCallEl.value = match.tossCall || "";
+  if(tossWinnerEl) tossWinnerEl.value = (match.tossWinner === 0 || match.tossWinner === 1) ? String(match.tossWinner) : "";
   if(reportEl) reportEl.value = match.report || "";
   if(locationEl) locationEl.value = match.location || "";
   if(courtEl) courtEl.value = match.court || "";
+  if(pintsPrevEl) pintsPrevEl.value = (match.pintsPrevNight === null || match.pintsPrevNight === undefined) ? "" : match.pintsPrevNight;
   if(pintsEl) pintsEl.value = (match.pints === null || match.pints === undefined) ? "" : match.pints;
   if(wildEl) wildEl.checked = !!match.wildcardActive;
 }
@@ -2319,12 +2502,20 @@ async function saveMatchFromForm(){
   const location = document.getElementById("matchLocation").value.trim();
   const court = document.getElementById("matchCourt").value.trim();
 
-  const tossRaw = document.getElementById("tossWinner").value;
-  const tossWinner = tossRaw === "" ? null : parseInt(tossRaw, 10);
+  const tossCallerRaw = document.getElementById("tossCaller").value;
+  const tossCall = document.getElementById("tossCall").value;
+  const tossWinnerRaw = document.getElementById("tossWinner").value;
+
+  const tossCaller = tossCallerRaw === "" ? null : parseInt(tossCallerRaw, 10);
+  const tossWinner = tossWinnerRaw === "" ? null : parseInt(tossWinnerRaw, 10);
 
   const pintsRaw = document.getElementById("matchPints").value;
   const pintsParsed = parseFloat(pintsRaw);
   const pints = pintsRaw === "" || isNaN(pintsParsed) ? null : pintsParsed;
+
+  const pintsPrevRaw = document.getElementById("matchPintsPrevNight").value;
+  const pintsPrevParsed = parseFloat(pintsPrevRaw);
+  const pintsPrevNight = pintsPrevRaw === "" || isNaN(pintsPrevParsed) ? null : pintsPrevParsed;
 
   let wildcardActive = false;
   const wildcardCheckbox = document.getElementById("wildcardActive");
@@ -2353,6 +2544,9 @@ async function saveMatchFromForm(){
     location,
     court,
     pints,
+    pintsPrevNight,
+    tossCaller,
+    tossCall,
     tossWinner,
     completed: outcome.completed,
     winner: outcome.winner,
