@@ -1181,7 +1181,7 @@ function rebuildSeasonsFromMatches(allMatches){
         : null;
 
     const tossCall =
-      (originalMatch.tossCall === "heads" || originalMatch.tossCall === "tails")
+      (originalMatch.tossCall === "blue" || originalMatch.tossCall === "red")
         ? originalMatch.tossCall
         : "";
 
@@ -2330,8 +2330,8 @@ function renderAddMatchForm(){
       <label class="muted">Toss call (optional)</label>
       <select id="tossCall">
         <option value="">Select call</option>
-        <option value="heads">Heads</option>
-        <option value="tails">Tails</option>
+        <option value="blue">Blue</option>
+        <option value="red">Red</option>
       </select>
     </div>
     <div>
